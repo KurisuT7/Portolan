@@ -20,6 +20,7 @@
 - sing-box 和 Realm 版本在面板中选择，按 GitHub 公布的 SHA-256 校验，可逐台或批量更新。
 - 登录保护：按来源的失败锁定、失败日志、可选 TOTP 两步验证；控制台页面带 Content-Security-Policy。
 - 服务器详情显示 Agent 版本，与面板版本不一致时提示重装。
+- 控制台提供浅色和深色主题，默认跟随系统，可在顶栏切换。
 - 安装方式：面板安装脚本（systemd，amd64/arm64，带校验、升级备份和失败回退）和 `ghcr.io/kurisut7/portolan` 多架构镜像。
 - 离线恢复工具 `portolan-runtime-import`：面板数据丢失时从节点上的配置重建数据库。
 

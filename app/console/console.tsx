@@ -16,6 +16,7 @@ import { NodeForm, NodesPage } from "./nodes";
 import { ForwardForm, ForwardsPage } from "./forwards";
 import { ForwardPage } from "./forward";
 import { CommandPalette, type PaletteAction } from "./palette";
+import { ThemeMenu, useThemeSync } from "./theme";
 
 const tabs: Array<{ label: string; route: Route; pages: Route["page"][] }> = [
   { label: "总览", route: { page: "overview" }, pages: ["overview"] },
@@ -26,6 +27,7 @@ const tabs: Array<{ label: string; route: Route; pages: Route["page"][] }> = [
 
 export default function Console() {
   const control = useConsole();
+  useThemeSync();
   if (control.session !== "ready") return <Gate control={control} />;
   return <Shell control={control} />;
 }
@@ -328,6 +330,7 @@ function Header({ route, control, onSearch, onSecurity }: { route: Route; contro
             <span>{syncLabel}</span>
             <RefreshCw size={13} className={control.refreshing ? "spin" : ""} aria-hidden="true" />
           </button>
+          <ThemeMenu />
           <button className="icon-btn" onClick={onSecurity} aria-label="两步验证" title={control.info?.totp_enabled ? "两步验证已开启" : "两步验证未开启"}>
             {control.info?.totp_enabled ? <ShieldCheck size={17} /> : <Shield size={17} />}
           </button>
