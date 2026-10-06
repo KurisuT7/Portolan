@@ -1,0 +1,28 @@
+[Unit]
+Description=Portolan desired-state agent
+Documentation=https://github.com/KurisuT7/portolan
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=root
+UMask=0027
+ExecStart=/usr/local/lib/portolan/portolan-agent run --config /etc/portolan/agent.json
+Restart=always
+RestartSec=5s
+TimeoutStopSec=20s
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/portolan /usr/local/lib/portolan
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+[Install]
+WantedBy=multi-user.target

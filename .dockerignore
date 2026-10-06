@@ -1,0 +1,5 @@
+*
+!release/bin/
+!release/THIRD_PARTY_LICENSES
+!scripts/install-agent.sh
+!LICENSE

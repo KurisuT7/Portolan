@@ -1,0 +1,29 @@
+[Unit]
+Description=Portolan Realm forwarding instance %i
+Documentation=https://github.com/zhboner/realm
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=portolan
+Group=portolan
+UMask=0027
+ExecStart=/usr/local/lib/portolan/realm -c /etc/portolan/runtime/current/realm/%i.toml
+Restart=on-failure
+RestartSec=2s
+LimitNOFILE=1048576
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+LockPersonality=yes
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

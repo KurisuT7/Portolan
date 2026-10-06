@@ -1,0 +1,29 @@
+# Dependencies
+/node_modules
+
+# Web build output
+/.next/
+/.vinext/
+/dist/
+/out/
+next-env.d.ts
+*.tsbuildinfo
+
+# The release build copies the exported console here before compiling the panel.
+/internal/webui/dist/*
+!/internal/webui/dist/.gitkeep
+
+# Release artifacts
+/release/
+
+# Local data and secrets
+.env*
+*.pem
+*.db
+*.db-shm
+*.db-wal
+/data/
+
+# Logs and editor files
+*.log
+.DS_Store

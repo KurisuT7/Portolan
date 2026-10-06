@@ -1,0 +1,15 @@
+# Portolan panel. Create panel.env next to this file first (see README), then
+# run: docker compose up -d
+# The panel listens on 127.0.0.1:8088 of the host; serve it over HTTPS with a
+# reverse proxy on the same host.
+services:
+  portolan:
+    image: ghcr.io/kurisut7/portolan:0.1.0
+    restart: unless-stopped
+    network_mode: host
+    env_file: panel.env
+    volumes:
+      - portolan-data:/var/lib/portolan-panel
+
+volumes:
+  portolan-data:

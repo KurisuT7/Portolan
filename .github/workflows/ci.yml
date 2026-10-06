@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GO_VERSION: "1.27.x"
+  NODE_VERSION: "24"
+  SING_BOX_VERSION: "1.14.2"
+
+jobs:
+  go:
+    name: Go tests
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - run: test -z "$(gofmt -l cmd internal)"
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Check generated configuration with sing-box ${{ env.SING_BOX_VERSION }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          name="sing-box-${SING_BOX_VERSION}-linux-amd64.tar.gz"
+          digest=$(gh api "repos/SagerNet/sing-box/releases/tags/v${SING_BOX_VERSION}" \
+            --jq ".assets[] | select(.name == \"$name\") | .digest")
+          curl -fsSLo "$RUNNER_TEMP/$name" "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VERSION}/$name"
+          echo "${digest#sha256:}  $RUNNER_TEMP/$name" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/$name" -C "$RUNNER_TEMP"
+          SING_BOX_BIN="$RUNNER_TEMP/sing-box-${SING_BOX_VERSION}-linux-amd64/sing-box" \
+            go test ./internal/configgen/ -run TestGeneratedFragmentsPassSingBoxCheck -count=1 -v
+
+  web:
+    name: Web console
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run lint
+      - run: npx tsc --noEmit
+      - run: npm test
+      - name: Check shell syntax
+        run: for script in scripts/*.sh; do sh -n "$script"; done
+
+  install:
+    name: Install from release archive
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+      - run: scripts/build-release.sh v0.0.0-ci
+      - name: Install with systemd and log in
+        run: |
+          sudo sh release/install-panel.sh --archive release/portolan_0.0.0-ci_linux_amd64.tar.gz \
+            --public-url https://panel.example.com | tee "$RUNNER_TEMP/install.log"
+          systemctl is-active portolan-panel.service
+          test "$(sudo stat -c '%a %U' /etc/portolan-panel/panel.env)" = "600 root"
+          test "$(sudo stat -c '%U' /var/lib/portolan-panel/portolan.db)" = portolan-panel
+          curl -fsS http://127.0.0.1:8088/healthz | grep -q '"version":"v0.0.0-ci"'
+          curl -fsSI http://127.0.0.1:8088/ | grep -qi "^content-security-policy: default-src 'self'"
+          token=$(sudo sed -n 's/^PORTOLAN_ADMIN_TOKEN=//p' /etc/portolan-panel/panel.env)
+          grep -qF "$token" "$RUNNER_TEMP/install.log"
+          curl -fsS -X POST -H 'Content-Type: application/json' -d "{\"token\":\"$token\"}" \
+            http://127.0.0.1:8088/api/v1/session | grep -q '"totp_enabled":false'
+      - name: Recovery tool runs as the panel account
+        run: |
+          out=$(sudo /usr/local/lib/portolan-panel/portolan-runtime-import --plan /var/tmp/missing.json \
+            --output /var/lib/portolan-panel/recovered.db 2>&1 || true)
+          echo "$out" | grep -q "root-owned recovery database"
+          out=$(sudo systemd-run --wait --pipe --uid=portolan-panel --gid=portolan-panel \
+            /usr/local/lib/portolan-panel/portolan-runtime-import --plan /var/tmp/missing.json --check 2>&1 || true)
+          echo "$out" | grep -q "missing.json"
+      - name: Two-step verification can be turned off from the host
+        run: sudo -u portolan-panel /usr/local/lib/portolan-panel/portolan-panel disable-totp --database /var/lib/portolan-panel/portolan.db | grep -q "was not enabled"
+      - name: Upgrade keeps data and configuration
+        run: |
+          before=$(sudo sha256sum /etc/portolan-panel/panel.env)
+          sudo sh release/install-panel.sh --archive release/portolan_0.0.0-ci_linux_amd64.tar.gz
+          test "$(sudo sha256sum /etc/portolan-panel/panel.env)" = "$before"
+          sudo ls /var/lib/portolan-panel/backups | grep -q '^portolan-.*\.db$'
+          curl -fsS http://127.0.0.1:8088/healthz
+      - name: Run the container image
+        run: |
+          docker build -t portolan:ci .
+          printf 'PORTOLAN_MASTER_KEY=%s\nPORTOLAN_ADMIN_TOKEN=%s\nPORTOLAN_LISTEN=127.0.0.1:18088\n' \
+            "$(head -c 32 /dev/urandom | base64)" "$(head -c 32 /dev/urandom | base64)" > "$RUNNER_TEMP/panel.env"
+          docker run -d --name portolan --network host --env-file "$RUNNER_TEMP/panel.env" \
+            -v portolan-data:/var/lib/portolan-panel portolan:ci
+          for attempt in $(seq 1 20); do curl -fsS http://127.0.0.1:18088/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:18088/healthz | grep -q '"version":"v0.0.0-ci"'
+          test "$(docker inspect -f '{{.Config.User}}' portolan:ci)" = "65532:65532"
+          docker exec portolan /usr/local/lib/portolan-panel/portolan-panel version
+          docker logs portolan 2>&1 | grep -q "portolan panel listening"
