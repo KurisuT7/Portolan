@@ -14,6 +14,7 @@ import { api, errorText, useFleet } from "./data";
 import { engineLabels, ForwardForm, networksLabel, probeBadge } from "./forwards";
 import { navigate } from "./hooks";
 import { useNodeLink } from "./nodes";
+import { TrafficPanel } from "./traffic";
 import { Badge, ConfirmDelete, CopyButton, Empty, PageHeader, Segmented, Spinner, Status, toast, type Tone } from "./ui";
 
 const ranges: ReadonlyArray<{ value: ProbeHistoryRange; label: string }> = [
@@ -125,6 +126,7 @@ export function ForwardPage({ id }: { id: string }) {
         </div>
       )}
       <Quality forward={forward} version={version} />
+      <TrafficPanel kind="forward" id={forward.id} serverId={forward.ingress_server_id} />
       {link.dialog}
       {dialog === "edit" && <ForwardForm initial={forward} onClose={() => setDialog(null)} />}
       {dialog === "delete" && (

@@ -121,6 +121,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/forwards/{id}/probe", s.withAdmin(s.triggerForwardProbe))
 	mux.HandleFunc("GET /api/v1/forwards/{id}/probe-history", s.withAdmin(s.forwardProbeHistory))
 	mux.HandleFunc("GET /api/v1/forward-probes", s.withAdmin(s.listForwardProbes))
+	mux.HandleFunc("GET /api/v1/traffic", s.withAdmin(s.trafficSummary))
+	mux.HandleFunc("GET /api/v1/servers/{id}/traffic", s.withAdmin(s.trafficHistory(store.TrafficServer)))
+	mux.HandleFunc("GET /api/v1/nodes/{id}/traffic", s.withAdmin(s.trafficHistory(store.TrafficNode)))
+	mux.HandleFunc("GET /api/v1/forwards/{id}/traffic", s.withAdmin(s.trafficHistory(store.TrafficForward)))
 	mux.HandleFunc("GET /api/v1/jobs", s.withAdmin(s.listJobs))
 	mux.HandleFunc("GET /api/v1/cores", s.withAdmin(s.listCores))
 	mux.HandleFunc("GET /api/v1/cores/{core}/releases", s.withAdmin(s.listCoreReleases))
@@ -138,6 +142,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/agent/discovered-nodes", s.withAgent(s.saveAgentDiscoveredNodes))
 	mux.HandleFunc("POST /api/v1/agent/forward-probes", s.withAgent(s.saveAgentForwardProbes))
 	mux.HandleFunc("POST /api/v1/agent/status", s.withAgent(s.saveAgentStatus))
+	mux.HandleFunc("POST /api/v1/agent/traffic", s.withAgent(s.saveAgentTraffic))
 	if s.web != nil {
 		// Unknown API paths stay JSON instead of falling through to the console.
 		mux.HandleFunc("GET /api/", func(w http.ResponseWriter, _ *http.Request) {

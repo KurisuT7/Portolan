@@ -103,6 +103,27 @@ export type ApiForwardProbeHistory = {
   points: ApiForwardProbeHistoryPoint[];
 };
 
+export type TrafficKind = "server" | "node" | "forward";
+
+// Bytes received (rx) and sent (tx) since the summary start; rates are bytes
+// per second from the latest report and zero once that report is old.
+export type ApiTrafficItem = {
+  kind: TrafficKind;
+  id: string;
+  server_id: string;
+  rx_bytes: number;
+  tx_bytes: number;
+  rx_rate: number;
+  tx_rate: number;
+  // Server items only: the latest traffic report and why port counters are missing.
+  reported_at?: string;
+  port_error?: "nft_missing" | "nft_failed";
+};
+
+export type ApiTraffic = { since: string; items: ApiTrafficItem[] };
+
+export type ApiTrafficPoint = { start: string; rx_bytes: number; tx_bytes: number };
+
 export type ApiJob = {
   id: string;
   server_id: string;
@@ -244,6 +265,19 @@ export class PortolanApi {
       `/api/v1/forwards/${encodeURIComponent(id)}/probe-history?range=${encodeURIComponent(range)}`,
       { signal },
     );
+  }
+
+  // Traffic since the start of the month in the browser's time zone.
+  async traffic(signal?: AbortSignal) {
+    const now = new Date();
+    const since = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+    return this.request<ApiTraffic>(`/api/v1/traffic?since=${encodeURIComponent(since)}`, { signal });
+  }
+
+  async trafficHistory(kind: TrafficKind, id: string, edges: Date[], signal?: AbortSignal) {
+    const collection = { server: "servers", node: "nodes", forward: "forwards" }[kind];
+    const query = edges.map((edge) => Math.floor(edge.getTime() / 1000)).join(",");
+    return (await this.request<{ points: ApiTrafficPoint[] }>(`/api/v1/${collection}/${encodeURIComponent(id)}/traffic?edges=${query}`, { signal })).points ?? [];
   }
 
   async config(signal?: AbortSignal) {

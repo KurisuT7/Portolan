@@ -9,6 +9,7 @@ import { byteLength } from "../lib/format";
 import { displayNodeProfile, groupNodesByServer, protocolLabels } from "../lib/nodes";
 import { routeHref } from "../lib/routing";
 import { configurationState, serverState, singBoxUnit, unitState } from "../lib/status";
+import { formatBytes, portsCounted, totalBytes, trafficOf } from "../lib/traffic";
 import { api, errorText, useFleet } from "./data";
 import { navigate } from "./hooks";
 import { CodeBlock, ConfirmDelete, copyText, Dialog, Empty, ErrorText, Field, PageHeader, ProtocolTag, SearchInput, Segmented, Spinner, Status, toast, useCopied } from "./ui";
@@ -131,6 +132,8 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
                 {group.nodes.map((node) => {
                   const profile = displayNodeProfile(node.protocol, node.profile);
                   const core = node.managed ? unitState(index.servers.get(node.server_id), singBoxUnit, now) : null;
+                  const counted = !errors.traffic && portsCounted(trafficOf(index.traffic, "server", node.server_id));
+                  const traffic = trafficOf(index.traffic, "node", node.id);
                   return (
                     <div className="node-row" key={node.id}>
                       <ProtocolTag protocol={node.protocol} port={node.listen_port} />
@@ -142,6 +145,9 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
                         </span>
                         {core && !core.running && <Status tone="bad">sing-box 未运行 · {core.detail}</Status>}
                       </div>
+                      <span className="node-traffic" title={counted && traffic ? `本月接收 ${formatBytes(traffic.rx_bytes)} · 发送 ${formatBytes(traffic.tx_bytes)}` : undefined}>
+                        {counted && `本月 ${formatBytes(traffic ? totalBytes(traffic) : 0)}`}
+                      </span>
                       <div className="node-actions">
                         <button className="btn btn-sm" disabled={!!errors.nodes} onClick={() => void link.copyLink(node)}>
                           {link.copied === node.id ? <Check size={14} /> : <Link2 size={14} />}

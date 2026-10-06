@@ -61,6 +61,13 @@ npm test
 SING_BOX_BIN=/path/to/sing-box go test ./internal/configgen/ -run TestGeneratedFragmentsPassSingBoxCheck -count=1
 ```
 
+改动端口流量计数时，在 Linux 上用真实的 nftables 运行计数测试。测试会改动规则集，所以放在单独的网络命名空间里：
+
+```bash
+go test -c -o traffic.test ./internal/traffic
+sudo unshare --net sh -c 'ip link set lo up && PORTOLAN_NFT_TEST=1 ./traffic.test -test.run NFT -test.v'
+```
+
 部分应用与回滚测试只在 Linux 上运行。改动界面时，在桌面宽度和 390 px 以下的手机宽度各检查一遍，页面不应出现横向滚动。
 
 构建与发布相同的产物（需要 Linux、GNU tar）：

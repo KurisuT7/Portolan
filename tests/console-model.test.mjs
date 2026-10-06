@@ -9,6 +9,7 @@ import { coreSummary, coresReady, serverCoreState } from "../app/lib/cores.ts";
 
 const now = Date.parse("2026-10-05T12:00:00Z");
 const fresh = "2026-10-05T11:59:30Z";
+const noTraffic = { since: "", items: [] };
 
 test("routes round-trip and accept legacy hashes", () => {
   for (const route of [
@@ -73,7 +74,7 @@ test("fleet index resolves targets and surfaces only actionable problems", () =>
     { id: "j2", server_id: "a", type: "sync", state: "failed", result: JSON.stringify({ message: "核心配置校验失败，未切换到新配置。" }), created_at: fresh },
     { id: "j1", server_id: "a", type: "sync", state: "succeeded", created_at: "2026-10-05T10:00:00Z" },
   ];
-  const fleet = { servers, nodes, forwards, probes, config };
+  const fleet = { servers, nodes, forwards, probes, config, traffic: noTraffic };
   const index = buildIndex(fleet);
   assert.equal(index.config.get("a").id, "j2");
   assert.deepEqual(index.forwardsByIngress.get("a").map((item) => item.id), ["f1", "f2"]);
@@ -100,10 +101,10 @@ test("route ordering puts problems first and summary counts only measured routes
   const forward = (id, extra = {}) => ({ id, ingress_server_id: "a", name: id, listen_port: 1, networks: ["tcp"], target_host: "x", target_port: 1, engine: "sing-box", enabled: true, ...extra });
   const forwards = [forward("ok"), forward("off", { enabled: false }), forward("udp", { networks: ["udp"] }), forward("down"), forward("slow")];
   const fleet = { servers: [{ id: "a", name: "a", address: "", agent_status: "online", last_seen_at: fresh, egress_ipv4: true, egress_ipv6: false }], nodes: [], forwards,
-    probes: [probe("ok", "stable"), probe("down", "down"), probe("slow", "degraded")], config: [] };
+    probes: [probe("ok", "stable"), probe("down", "down"), probe("slow", "degraded")], config: [], traffic: noTraffic };
   const index = buildIndex(fleet);
   assert.deepEqual(sortRoutes(forwards, index, now).map((item) => item.id), ["down", "slow", "ok", "udp", "off"]);
-  assert.deepEqual(fleetSummary(fleet, index, now), { servers: 1, online: 1, measured: 3, healthy: 1, nodes: 0 });
+  assert.deepEqual(fleetSummary(fleet, index, now), { servers: 1, online: 1, measured: 3, healthy: 1 });
 });
 
 test("configuration state trusts the Agent's active release over the job log", () => {
@@ -134,7 +135,7 @@ test("service state is claimed only from a fresh Agent report", () => {
   assert.equal(realmForwardId("portolan-realm@f2.service"), "f2");
 
   const forwards = [{ id: "f2", ingress_server_id: "a", name: "到地址", listen_port: 1001, networks: ["tcp"], target_host: "2001:db8::1", target_port: 80, engine: "realm", enabled: true }];
-  const fleet = { servers: [server], nodes: [], forwards, probes: [], config: [] };
+  const fleet = { servers: [server], nodes: [], forwards, probes: [], config: [], traffic: noTraffic };
   const items = attentionItems(fleet, buildIndex(fleet), {}, now);
   assert.deepEqual(items.map((item) => [item.key, item.detail]), [["unit:a:portolan-realm@f2.service", "转发「到地址」未运行 · 反复重启"]]);
   assert.deepEqual(stoppedUnits({ ...server, last_seen_at: "2026-10-05T11:00:00Z" }, now), []);
@@ -146,13 +147,13 @@ test("a route whose forwarding process is down is not healthy", () => {
   const forward = (id) => ({ id, ingress_server_id: "a", name: id, listen_port: 1, networks: ["tcp"], target_host: "x", target_port: 1, engine: "realm", enabled: true });
   const probe = (id) => ({ forward_id: id, server_id: "a", checked_at: fresh, attempts: 3, successes: 3, latency_ms: 20, jitter_ms: 1, loss_percent: 0, status: "stable" });
   const forwards = [forward("up"), forward("down")];
-  const fleet = { servers: [server], nodes: [], forwards, probes: [probe("up"), probe("down")], config: [] };
+  const fleet = { servers: [server], nodes: [], forwards, probes: [probe("up"), probe("down")], config: [], traffic: noTraffic };
   const index = buildIndex(fleet);
   const down = routeState(forwards[1], index, false, now);
   assert.deepEqual([down.stopped, down.tone, down.engineDetail, down.probe.tone], [true, "bad", "启动失败", "good"]);
   assert.equal(routeState(forwards[0], index, false, now).tone, "good");
   assert.deepEqual(sortRoutes(forwards, index, now).map((item) => item.id), ["down", "up"]);
-  assert.deepEqual(fleetSummary(fleet, index, now), { servers: 1, online: 1, measured: 2, healthy: 1, nodes: 0 });
+  assert.deepEqual(fleetSummary(fleet, index, now), { servers: 1, online: 1, measured: 2, healthy: 1 });
 });
 
 test("core state follows the target, update jobs and Agent reports", () => {

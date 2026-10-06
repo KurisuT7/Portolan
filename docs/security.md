@@ -31,7 +31,7 @@
 - 客户端链接按需解封；列表 API 不返回敏感规格。
 - 服务配置文件为 root 写入、`portolan` 组只读；Agent 凭据保持 `0600 root:root`。
 - sing-box 日志级别为 `warn`，不把每条代理连接的目标地址写入各服务器的日志。
-- Agent 只上报生效 revision、Agent 与核心的版本和 Portolan 自有 systemd 服务的状态，不上报进程输出。
+- Agent 只上报生效 revision、Agent 与核心的版本、Portolan 自有 systemd 服务的状态，以及网卡和端口的累计字节数，不上报进程输出或连接的目标地址。
 
 ## 供应链
 
@@ -48,6 +48,7 @@
 - sing-box 与 Realm 以非 root `portolan` 用户运行，仅保留绑定低端口所需的 `CAP_NET_BIND_SERVICE`。
 - systemd 单元启用 `NoNewPrivileges`、只读系统、私有临时目录、内核与控制组保护等限制。
 - Agent 需要写配置并调用 systemd，因此以 root 运行；写路径限制为 `/etc/portolan` 和存放核心二进制的 `/usr/local/lib/portolan`。
+- 流量计数使用独立的 nftables 表 `inet portolan`：链的策略为接受，优先级排在常规过滤之后，只有计数规则，不改变其他防火墙规则的结果，也不统计被它们丢弃的包。Agent 只写入这张表，不读取或修改其他表。
 
 ## 明确的不安全能力
 

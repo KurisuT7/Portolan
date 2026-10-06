@@ -98,6 +98,33 @@ CREATE TABLE IF NOT EXISTS forward_probes (
   last_error TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_forward_probes_latest ON forward_probes(forward_id, checked_at DESC);
+CREATE TABLE IF NOT EXISTS traffic_counters (
+  server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  counter TEXT NOT NULL,
+  epoch TEXT NOT NULL,
+  rx INTEGER NOT NULL,
+  tx INTEGER NOT NULL,
+  rx_rate REAL NOT NULL DEFAULT 0,
+  tx_rate REAL NOT NULL DEFAULT 0,
+  observed_at TEXT NOT NULL,
+  PRIMARY KEY (server_id, counter)
+);
+CREATE TABLE IF NOT EXISTS traffic_hours (
+  kind TEXT NOT NULL,
+  ref_id TEXT NOT NULL,
+  hour INTEGER NOT NULL,
+  server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  rx INTEGER NOT NULL,
+  tx INTEGER NOT NULL,
+  PRIMARY KEY (kind, ref_id, hour)
+);
+CREATE INDEX IF NOT EXISTS idx_traffic_hours_hour ON traffic_hours(hour);
+CREATE INDEX IF NOT EXISTS idx_traffic_hours_server ON traffic_hours(server_id);
+CREATE TABLE IF NOT EXISTS traffic_reports (
+  server_id TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
+  reported_at TEXT NOT NULL,
+  port_error TEXT NOT NULL DEFAULT ''
+);
 `
 	if _, err := s.db.ExecContext(ctx, schema); err != nil {
 		return err

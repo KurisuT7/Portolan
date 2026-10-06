@@ -1,9 +1,10 @@
-import type { ApiCores, ApiForward, ApiForwardProbe, ApiJob, ApiNode, ApiServer } from "./api";
+import type { ApiCores, ApiForward, ApiForwardProbe, ApiJob, ApiNode, ApiServer, ApiTraffic } from "./api";
 import { formatEndpoint } from "./endpoints.ts";
 import { relativeTime } from "./format.ts";
 import { protocolLabels } from "./nodes.ts";
 import { probeState } from "./quality.ts";
 import { configurationState, forwardUnit, realmForwardId, serverState, stoppedUnits, unitDetail, unitState, type StatusTone } from "./status.ts";
+import { indexTraffic } from "./traffic.ts";
 import type { Route } from "./routing.ts";
 
 export type Fleet = {
@@ -13,6 +14,7 @@ export type Fleet = {
   probes: ApiForwardProbe[];
   config: ApiJob[];
   cores: ApiCores;
+  traffic: ApiTraffic;
 };
 
 export type FleetIndex = ReturnType<typeof buildIndex>;
@@ -38,6 +40,7 @@ export function buildIndex(fleet: Fleet) {
     config,
     nodesByServer: groupBy(fleet.nodes, (node) => node.server_id),
     forwardsByIngress: groupBy(fleet.forwards, (forward) => forward.ingress_server_id),
+    traffic: indexTraffic(fleet.traffic),
   };
 }
 
@@ -111,7 +114,6 @@ export function fleetSummary(fleet: Fleet, index: FleetIndex, now: number) {
     online: states.filter((state) => state === "在线").length,
     measured: routes.filter((route) => route.tone !== "neutral").length,
     healthy: routes.filter((route) => route.tone === "good").length,
-    nodes: fleet.nodes.length,
   };
 }
 

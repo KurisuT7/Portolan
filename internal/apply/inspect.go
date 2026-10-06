@@ -84,6 +84,29 @@ func Inspect(ctx context.Context, options Options) (model.RuntimeStatus, error) 
 	return status, nil
 }
 
+// ActivePorts lists the ports the services of the active release listen on.
+func ActivePorts(runtimeRoot string) ([]uint16, error) {
+	release, err := filepath.EvalSymlinks(filepath.Join(runtimeRoot, "current"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	listeners, err := releaseListeners(release)
+	if err != nil {
+		return nil, err
+	}
+	var ports []uint16
+	for _, items := range listeners {
+		for _, item := range items {
+			ports = append(ports, item.Port)
+		}
+	}
+	slices.Sort(ports)
+	return slices.Compact(ports), nil
+}
+
 // binaryVersion returns the version token from the first output line, or an
 // empty string when the binary cannot report one.
 func binaryVersion(ctx context.Context, options Options, binary string, field int, arguments ...string) string {

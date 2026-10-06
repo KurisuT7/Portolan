@@ -27,6 +27,7 @@ import (
 	"github.com/KurisuT7/Portolan/internal/buildinfo"
 	"github.com/KurisuT7/Portolan/internal/discovery"
 	"github.com/KurisuT7/Portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/traffic"
 )
 
 type Config struct {
@@ -51,6 +52,11 @@ type Client struct {
 	// statusMu keeps a runtime report from being read before a job and
 	// delivered after that job's completion report.
 	statusMu sync.Mutex
+	traffic  *traffic.Collector
+	// discoveredPorts are the ports of the existing nodes found by the last
+	// discovery scan; their traffic is counted like that of managed ports.
+	discoveredMu    sync.Mutex
+	discoveredPorts []uint16
 }
 
 type Enrollment struct {
@@ -66,6 +72,7 @@ const (
 	discoveryInterval     = 10 * time.Minute
 	discoveryRetry        = time.Minute
 	statusInterval        = 30 * time.Second
+	trafficInterval       = 30 * time.Second
 	coreDownloadTimeout   = 15 * time.Minute
 	maxCoreArchiveBytes   = 512 << 20
 )
@@ -79,7 +86,11 @@ func New(config Config) (*Client, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
-	return &Client{config: config, http: &http.Client{Timeout: 75 * time.Second}}, nil
+	return &Client{
+		config:  config,
+		http:    &http.Client{Timeout: 75 * time.Second},
+		traffic: &traffic.Collector{ProcRoot: "/proc", Accounting: &traffic.Accounting{}},
+	}, nil
 }
 
 func Enroll(ctx context.Context, panelURL, enrollmentToken string, allowInsecureHTTP bool) (Enrollment, error) {
@@ -225,15 +236,16 @@ func (c *Client) Run(ctx context.Context, once bool) error {
 
 	runCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	results := make(chan error, 4)
+	results := make(chan error, 5)
 	go func() { results <- c.runJobLoop(runCtx) }()
 	go func() { results <- c.runProbeLoop(runCtx) }()
 	go func() { results <- c.runDiscoveryLoop(runCtx) }()
 	go func() { results <- c.runStatusLoop(runCtx) }()
+	go func() { results <- c.runTrafficLoop(runCtx) }()
 
 	errorsSeen := []error{<-results}
 	cancel()
-	errorsSeen = append(errorsSeen, <-results, <-results, <-results)
+	errorsSeen = append(errorsSeen, <-results, <-results, <-results, <-results)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -349,6 +361,47 @@ func (c *Client) applyOptions() applyconfig.Options {
 	}
 }
 
+func (c *Client) runTrafficLoop(ctx context.Context) error {
+	for {
+		if err := c.reportTraffic(ctx); err != nil && ctx.Err() == nil {
+			slog.Warn("traffic report failed", "error", err)
+		}
+		if !wait(ctx, trafficInterval) {
+			return ctx.Err()
+		}
+	}
+}
+
+// reportTraffic sends the current counters of the host's public interfaces
+// and of every port the active release or an existing node listens on.
+func (c *Client) reportTraffic(ctx context.Context) error {
+	ports, err := applyconfig.ActivePorts(c.config.RuntimeRoot)
+	if err != nil {
+		slog.Warn("active release ports are unavailable for traffic counting", "error", err)
+	}
+	c.discoveredMu.Lock()
+	ports = append(ports, c.discoveredPorts...)
+	c.discoveredMu.Unlock()
+	body, err := json.Marshal(c.traffic.Report(ctx, ports))
+	if err != nil {
+		return err
+	}
+	request, err := c.request(ctx, http.MethodPost, "/api/v1/agent/traffic", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Content-Type", "application/json")
+	response, err := c.http.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusNoContent {
+		return responseError(response)
+	}
+	return nil
+}
+
 func (c *Client) runProbeLoop(ctx context.Context) error {
 	for {
 		if err := c.probeAndReport(ctx); err != nil && ctx.Err() == nil {
@@ -381,6 +434,13 @@ func (c *Client) discoverAndReport(ctx context.Context) error {
 	if len(report.Warnings) > 0 {
 		slog.Debug("existing node discovery completed with ignored configurations", "warnings", len(report.Warnings))
 	}
+	ports := make([]uint16, 0, len(report.Items))
+	for _, item := range report.Items {
+		ports = append(ports, item.ListenPort)
+	}
+	c.discoveredMu.Lock()
+	c.discoveredPorts = ports
+	c.discoveredMu.Unlock()
 	body, err := json.Marshal(map[string]any{"items": report.Items})
 	if err != nil {
 		return err

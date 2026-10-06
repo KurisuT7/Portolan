@@ -139,6 +139,9 @@ func (s *Store) DeleteNode(ctx context.Context, nodeID string) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM nodes WHERE id=?`, nodeID); err != nil {
 		return err
 	}
+	if err := deleteTraffic(ctx, tx, TrafficNode, nodeID); err != nil {
+		return err
+	}
 	return s.commitSync(ctx, tx, serverID)
 }
 

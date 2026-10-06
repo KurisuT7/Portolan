@@ -42,6 +42,8 @@ and tests over prose; when they disagree, fix the prose in the same change.
   shared UI changes require `npm run lint`, `npx tsc --noEmit`, and `npm test` (which builds the export).
 - Protocol or config-generation changes: run the integration test with `SING_BOX_BIN` set to a real
   supported sing-box binary; a mock-only pass is insufficient.
+- Port traffic accounting changes: run the `PORTOLAN_NFT_TEST=1` test against a real `nft` in a
+  disposable network namespace (see `CONTRIBUTING.md`); CI runs it too.
 - UI changes: exercise the rendered page and interaction on desktop and at 390 px or narrower, check
   `document.documentElement.scrollWidth`, and confirm no Content-Security-Policy violations.
 - Dependency changes: run `npm audit` or review the Go module diff, and assess findings against what

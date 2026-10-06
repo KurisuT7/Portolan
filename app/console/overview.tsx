@@ -3,6 +3,7 @@
 import { ArrowRight, Check, ChevronRight } from "lucide-react";
 import { attentionItems, fleetSummary } from "../lib/fleet";
 import { routeHref } from "../lib/routing";
+import { byteParts, fleetTraffic, formatBytes } from "../lib/traffic";
 import { useFleet } from "./data";
 import { RouteGrid } from "./forwards";
 import { ServerGrid } from "./servers";
@@ -15,6 +16,8 @@ export function OverviewPage() {
   const problems = attention.filter((item) => item.tone !== "neutral").length;
   const unavailable = !!(errors.servers || errors.forwards || errors.probes);
   const tone = unavailable ? "neutral" : problems ? (attention.some((item) => item.tone === "bad") ? "bad" : "warn") : "good";
+  const month = errors.traffic ? null : fleetTraffic(data.traffic);
+  const monthParts = month ? byteParts(month.rx + month.tx) : null;
   return (
     <>
       <div className="overview-top">
@@ -32,9 +35,9 @@ export function OverviewPage() {
               <strong>{summary.healthy}<small>/{summary.measured}</small></strong>
               <span>线路正常</span>
             </div>
-            <div>
-              <strong>{summary.nodes}</strong>
-              <span>节点</span>
+            <div title={month ? `接收 ${formatBytes(month.rx)} · 发送 ${formatBytes(month.tx)}` : undefined}>
+              <strong>{monthParts ? <>{monthParts.value}<small>{monthParts.unit}</small></> : "—"}</strong>
+              <span>本月流量</span>
             </div>
           </div>
         </section>

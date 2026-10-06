@@ -9,8 +9,8 @@ export const api = new PortolanApi();
 export type Resource = keyof Fleet;
 export type ResourceErrors = Partial<Record<Resource, string>>;
 
-const resources: Resource[] = ["servers", "nodes", "forwards", "probes", "config", "cores"];
-const empty: Fleet = { servers: [], nodes: [], forwards: [], probes: [], config: [], cores: { targets: [], jobs: [] } };
+const resources: Resource[] = ["servers", "nodes", "forwards", "probes", "config", "cores", "traffic"];
+const empty: Fleet = { servers: [], nodes: [], forwards: [], probes: [], config: [], cores: { targets: [], jobs: [] }, traffic: { since: "", items: [] } };
 
 export const resourceNames: Record<Resource, string> = {
   servers: "服务器",
@@ -19,6 +19,7 @@ export const resourceNames: Record<Resource, string> = {
   probes: "延迟检测",
   config: "配置状态",
   cores: "核心版本",
+  traffic: "流量",
 };
 
 export function errorText(error: unknown) {

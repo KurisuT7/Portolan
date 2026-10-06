@@ -29,6 +29,11 @@ jobs:
       - run: test -z "$(gofmt -l cmd internal)"
       - run: go vet ./...
       - run: go test ./...
+      - name: Count port traffic with the real nftables
+        run: |
+          command -v nft >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq nftables; }
+          go test -c -o "$RUNNER_TEMP/traffic.test" ./internal/traffic
+          sudo unshare --net sh -c "ip link set lo up && PORTOLAN_NFT_TEST=1 '$RUNNER_TEMP/traffic.test' -test.run NFT -test.v"
       - name: Check generated configuration with sing-box ${{ env.SING_BOX_VERSION }}
         env:
           GH_TOKEN: ${{ github.token }}

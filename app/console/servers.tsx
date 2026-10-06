@@ -9,11 +9,13 @@ import { relativeTime, timeLabel } from "../lib/format";
 import { routeHref } from "../lib/routing";
 import { coresReady } from "../lib/cores";
 import { configurationState, realmForwardId, serverState, singBoxUnit, unitState } from "../lib/status";
+import { formatBytes, totalBytes, trafficOf } from "../lib/traffic";
 import { CoreDialog, CoreLine } from "./cores";
 import { api, errorText, useFleet } from "./data";
 import { navigate } from "./hooks";
 import { ForwardForm, RouteGrid } from "./forwards";
 import { NodeForm, NodeList } from "./nodes";
+import { Rates, TrafficBreakdown, TrafficPanel } from "./traffic";
 import { Badge, CodeBlock, ConfirmDelete, CopyButton, Dialog, Empty, ErrorText, Field, PageHeader, ProtocolTag, SearchInput, Section, Spinner, Status, toast } from "./ui";
 
 function matches(server: ApiServer, query: string) {
@@ -69,6 +71,7 @@ function ServerCard({ server }: { server: ApiServer }) {
   const nodes = index.nodesByServer.get(server.id) ?? [];
   const forwards = index.forwardsByIngress.get(server.id) ?? [];
   const region = regionParts(server.region);
+  const traffic = errors.traffic ? undefined : trafficOf(index.traffic, "server", server.id);
   return (
     <article className={`server-card tone-${state.tone}`}>
       <span className="watermark" aria-hidden="true">{region.code}</span>
@@ -90,6 +93,12 @@ function ServerCard({ server }: { server: ApiServer }) {
         {nodes.length > 4 && <span className="sub">+{nodes.length - 4}</span>}
         {!nodes.length && <span className="sub">无节点</span>}
       </div>
+      {traffic?.reported_at && (
+        <div className="card-traffic" title={`本月接收 ${formatBytes(traffic.rx_bytes)} · 发送 ${formatBytes(traffic.tx_bytes)}`}>
+          <span>本月 <b>{formatBytes(totalBytes(traffic))}</b></span>
+          {state.label === "在线" && <Rates item={traffic} />}
+        </div>
+      )}
       <div className="server-card-foot">
         <span>{forwards.length ? `${forwards.length} 条入口转发` : "无入口转发"}</span>
         {(config.tone === "bad" || config.label === "结果未确认") && <Status tone={config.tone}>配置{config.label}</Status>}
@@ -150,6 +159,11 @@ export function ServerPage({ id }: { id: string }) {
         <Section title="指向这台服务器" count={incoming.length}>
           <RouteGrid forwards={incoming} />
         </Section>
+      )}
+      {state.label !== "待安装" && (
+        <TrafficPanel kind="server" id={server.id} serverId={server.id}>
+          <TrafficBreakdown serverId={server.id} />
+        </TrafficPanel>
       )}
       {dialog === "edit" && <ServerForm server={server} onClose={() => setDialog(null)} />}
       {dialog === "install" && <InstallDialog server={server} onClose={() => setDialog(null)} />}

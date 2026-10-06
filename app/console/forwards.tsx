@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { Fragment, useState, type FormEvent } from "react";
 import { ArrowRight, Check, Link2, Plus } from "lucide-react";
 import { ApiError, type ApiForward, type ForwardInput } from "../lib/api";
 import { serverEndpoint } from "../lib/endpoints";
@@ -9,6 +9,7 @@ import { byteLength, milliseconds, percent } from "../lib/format";
 import { formatNodeOption, groupNodesByServer } from "../lib/nodes";
 import { routeHref } from "../lib/routing";
 import { configurationState } from "../lib/status";
+import { formatBytes, portsCounted, totalBytes, trafficOf } from "../lib/traffic";
 import { api, errorText, useFleet } from "./data";
 import { useHistory } from "./history";
 import { navigate } from "./hooks";
@@ -91,6 +92,11 @@ function RouteCard({ forward, link }: { forward: ApiForward; link: ReturnType<ty
   const measured = probe.tone !== "neutral";
   const latency = !route.stopped && measured && probe.tone !== "bad" ? index.probes.get(forward.id)!.latency_ms : null;
   const summary = history?.summary;
+  const traffic = trafficOf(index.traffic, "forward", forward.id);
+  const facts = [
+    ...(summary && summary.availability_percent != null ? [`24h 均值 ${milliseconds(summary.avg_latency_ms)}`, `失败率 ${percent(summary.loss_percent)}`] : []),
+    ...(!errors.traffic && portsCounted(trafficOf(index.traffic, "server", forward.ingress_server_id)) ? [`本月 ${formatBytes(traffic ? totalBytes(traffic) : 0)}`] : []),
+  ];
   return (
     <article className={`route-card tone-${route.tone}${forward.enabled ? "" : " is-off"}`}>
       <div className="route-card-head">
@@ -107,11 +113,9 @@ function RouteCard({ forward, link }: { forward: ApiForward; link: ReturnType<ty
         {route.stopped && <strong className="route-reason">{route.engineDetail}</strong>}
         {!route.stopped && probe.tone === "bad" && <strong className="route-reason">{probe.detail || "连接失败"}</strong>}
         {!route.stopped && !measured && <span className="route-reason muted">{probe.label === "仅 UDP" ? "仅 UDP · 不做 TCP 检测" : probe.label}</span>}
-        {summary && summary.availability_percent != null && (
+        {facts.length > 0 && (
           <span className="route-summary">
-            24h 均值 {milliseconds(summary.avg_latency_ms)}
-            <br />
-            失败率 {percent(summary.loss_percent)}
+            {facts.map((fact, position) => <Fragment key={fact}>{position > 0 && <br />}{fact}</Fragment>)}
           </span>
         )}
       </div>

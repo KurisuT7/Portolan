@@ -16,6 +16,7 @@
 - 节点 Agent：一行命令安装，主动出站连接面板；配置先由 sing-box 校验再原子切换，服务没有正常运行或没有占用端口时恢复上一版本。
 - 协议：VLESS Reality（TCP、Vision、gRPC）、Shadowsocks（2022 系列、AEAD，`none` 需显式确认）、Snell v5/v6，导出 `vless://`、`ss://` 链接和 Surge 配置行。
 - 转发：Realm（默认，每条规则一个进程）或 sing-box direct；目标可以是协议节点、服务器端口或自定义地址；入口到目标的 TCP 延迟检测和七天历史。
+- 流量统计：服务器整机（默认路由网卡）以及每个节点、转发（nftables 端口计数）的收发字节，显示本月用量、当前速率和最近 24 小时、30 天、12 个月的历史，记录保留 400 天。
 - 识别服务器上已有的 sing-box 和 Snell 节点，只读显示和导出。
 - sing-box 和 Realm 版本在面板中选择，按 GitHub 公布的 SHA-256 校验，可逐台或批量更新。
 - 登录保护：按来源的失败锁定、失败日志、可选 TOTP 两步验证；控制台页面带 Content-Security-Policy。

@@ -242,5 +242,8 @@ func (s *Store) DeleteForward(ctx context.Context, forwardID string) error {
 	if _, err := tx.ExecContext(ctx, `DELETE FROM forwards WHERE id=?`, forwardID); err != nil {
 		return err
 	}
+	if err := deleteTraffic(ctx, tx, TrafficForward, forwardID); err != nil {
+		return err
+	}
 	return s.commitSync(ctx, tx, serverID)
 }

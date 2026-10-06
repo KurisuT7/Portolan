@@ -54,6 +54,32 @@ func TestInspectReportsActiveReleaseVersionsAndUnits(t *testing.T) {
 	}
 }
 
+func TestActivePortsListEveryListenerOfTheActiveRelease(t *testing.T) {
+	o, _ := recordedOptions(t)
+	if ports, err := ActivePorts(o.RuntimeRoot); err != nil || ports != nil {
+		t.Fatalf("without a release: ports=%v err=%v", ports, err)
+	}
+	sing := realmForward("sing", 30001)
+	sing.Engine = model.ForwardSingBox
+	node := model.Node{ID: "ss", Name: "SS", Protocol: model.ProtocolShadowsocks, ListenPort: 24443, Enabled: true,
+		SS: &model.SSSpec{Method: "2022-blake3-aes-128-gcm", Password: "MDEyMzQ1Njc4OWFiY2RlZg=="}}
+	release := filepath.Join(o.RuntimeRoot, "releases", "8")
+	payload := agentproto.SyncPayload{Revision: 8, Nodes: []model.Node{node}, Forwards: []model.Forward{realmForward("edge", 30000), sing}}
+	if err := writeRelease(release, payload, o); err != nil {
+		t.Fatal(err)
+	}
+	if err := switchCurrent(o.RuntimeRoot, release); err != nil {
+		t.Skipf("symlink unavailable: %v", err)
+	}
+	ports, err := ActivePorts(o.RuntimeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(ports, []uint16{24443, 30000, 30001}) {
+		t.Fatalf("ports = %v", ports)
+	}
+}
+
 func TestInspectWithoutReleaseReportsNoUnits(t *testing.T) {
 	o, _ := recordedOptions(t)
 	o.RunCommand = func(context.Context, string, ...string) (string, error) { return "", errors.New("missing binary") }

@@ -3,6 +3,7 @@ package model
 import (
 	"errors"
 	"fmt"
+	"math"
 	"net"
 	"net/netip"
 	"regexp"
@@ -38,6 +39,8 @@ var (
 	unitNamePattern  = regexp.MustCompile(`^portolan-(?:sing-box|realm@[a-zA-Z0-9_-]{1,96})\.service$`)
 	unitStatePattern = regexp.MustCompile(`^[a-z-]{1,32}$`)
 	versionPattern   = regexp.MustCompile(`^[0-9A-Za-z.+-]{0,64}$`)
+	epochPattern     = regexp.MustCompile(`^[0-9A-Za-z:._-]{0,80}$`)
+	interfacePattern = regexp.MustCompile(`^[0-9A-Za-z_.:@-]{1,15}$`)
 )
 
 type Server struct {
@@ -93,6 +96,72 @@ type CoreTarget struct {
 	Version   string            `json:"version"`
 	SHA256    map[string]string `json:"sha256"`
 	UpdatedAt time.Time         `json:"updated_at"`
+}
+
+// TrafficReport carries the cumulative byte counters an Agent reads on its
+// host. Interface counters cover the network interfaces that hold a default
+// route and restart from zero when the host boots (BootID changes). Port
+// counters cover the TCP and UDP traffic of each listening port Portolan knows
+// on the host and restart from zero when PortEpoch changes.
+type TrafficReport struct {
+	BootID     string             `json:"boot_id"`
+	Interfaces []InterfaceTraffic `json:"interfaces"`
+	PortEpoch  string             `json:"port_epoch,omitempty"`
+	Ports      []PortTraffic      `json:"ports"`
+	// PortError explains missing port counters: "nft_missing" when the host
+	// has no nft command, "nft_failed" when nftables rejected the accounting
+	// rules or could not be read.
+	PortError string `json:"port_error,omitempty"`
+}
+
+// InterfaceTraffic is what a network interface received (RX) and sent (TX).
+type InterfaceTraffic struct {
+	Name string `json:"name"`
+	RX   uint64 `json:"rx_bytes"`
+	TX   uint64 `json:"tx_bytes"`
+}
+
+// PortTraffic is what a listening port received from its clients (RX) and
+// sent back to them (TX), over TCP and UDP together.
+type PortTraffic struct {
+	Port uint16 `json:"port"`
+	RX   uint64 `json:"rx_bytes"`
+	TX   uint64 `json:"tx_bytes"`
+}
+
+const (
+	TrafficPortsUnavailable = "nft_missing"
+	TrafficPortsFailed      = "nft_failed"
+)
+
+func (r TrafficReport) Validate() error {
+	if !epochPattern.MatchString(r.BootID) || !epochPattern.MatchString(r.PortEpoch) {
+		return errors.New("traffic counter epoch is invalid")
+	}
+	if r.Interfaces == nil || len(r.Interfaces) > 32 || r.Ports == nil || len(r.Ports) > 1024 {
+		return errors.New("traffic counters must be lists of at most 32 interfaces and 1024 ports")
+	}
+	if r.PortError != "" && r.PortError != TrafficPortsUnavailable && r.PortError != TrafficPortsFailed {
+		return errors.New("traffic port error is invalid")
+	}
+	names := map[string]bool{}
+	for _, item := range r.Interfaces {
+		if !interfacePattern.MatchString(item.Name) || names[item.Name] || item.RX > math.MaxInt64 || item.TX > math.MaxInt64 {
+			return fmt.Errorf("traffic counter for interface %q is invalid", item.Name)
+		}
+		names[item.Name] = true
+	}
+	ports := map[uint16]bool{}
+	for _, item := range r.Ports {
+		if item.Port == 0 || ports[item.Port] || item.RX > math.MaxInt64 || item.TX > math.MaxInt64 {
+			return fmt.Errorf("traffic counter for port %d is invalid", item.Port)
+		}
+		ports[item.Port] = true
+	}
+	if len(r.Ports) > 0 && r.PortEpoch == "" {
+		return errors.New("port counters require an epoch")
+	}
+	return nil
 }
 
 func (r RuntimeStatus) Validate() error {
