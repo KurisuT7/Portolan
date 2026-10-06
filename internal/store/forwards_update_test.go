@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/agentproto"
-	"github.com/KurisuT7/portolan/internal/model"
-	"github.com/KurisuT7/portolan/internal/vault"
+	"github.com/KurisuT7/Portolan/internal/agentproto"
+	"github.com/KurisuT7/Portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/vault"
 )
 
 func forwardTestStore(t *testing.T) (*Store, model.Server, model.Server) {

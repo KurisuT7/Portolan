@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func (s *Server) overview(w http.ResponseWriter, r *http.Request) {

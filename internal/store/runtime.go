@@ -7,7 +7,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 // lostSyncAfter is how long a sync may stay running without a result before

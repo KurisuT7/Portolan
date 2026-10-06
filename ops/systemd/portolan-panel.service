@@ -1,6 +1,6 @@
 [Unit]
 Description=Portolan control panel
-Documentation=https://github.com/KurisuT7/portolan
+Documentation=https://github.com/KurisuT7/Portolan
 After=network-online.target
 Wants=network-online.target
 

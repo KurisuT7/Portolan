@@ -29,5 +29,5 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/portolan/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/KurisuT7/portolan/releases/tag/v0.1.0
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.1.0

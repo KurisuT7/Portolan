@@ -15,7 +15,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 const planSchema = 1

@@ -8,8 +8,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/KurisuT7/portolan/internal/store"
-	"github.com/KurisuT7/portolan/internal/vault"
+	"github.com/KurisuT7/Portolan/internal/store"
+	"github.com/KurisuT7/Portolan/internal/vault"
 	_ "modernc.org/sqlite"
 )
 

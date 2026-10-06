@@ -12,8 +12,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
-	"github.com/KurisuT7/portolan/internal/vault"
+	"github.com/KurisuT7/Portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/vault"
 	_ "modernc.org/sqlite"
 )
 

@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/buildinfo"
-	"github.com/KurisuT7/portolan/internal/totp"
+	"github.com/KurisuT7/Portolan/internal/buildinfo"
+	"github.com/KurisuT7/Portolan/internal/totp"
 )
 
 const (

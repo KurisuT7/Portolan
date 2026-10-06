@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func TestRealityExportUsesShareLinkParameterNames(t *testing.T) {

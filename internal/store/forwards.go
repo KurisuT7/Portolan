@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func (s *Store) CreateForward(ctx context.Context, forward model.Forward) (model.Forward, error) {

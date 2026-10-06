@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/KurisuT7/portolan/internal/model"
-	"github.com/KurisuT7/portolan/internal/vault"
+	"github.com/KurisuT7/Portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/vault"
 )
 
 func TestQueueFailureRollsBackResourceMutation(t *testing.T) {

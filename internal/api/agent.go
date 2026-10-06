@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
-	"github.com/KurisuT7/portolan/internal/store"
+	"github.com/KurisuT7/Portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/store"
 )
 
 func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {

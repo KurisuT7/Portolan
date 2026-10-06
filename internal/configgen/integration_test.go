@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 // Run with SING_BOX_BIN set to a real sing-box binary. The normal test suite

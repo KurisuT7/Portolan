@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func TestProbeForwardReportsStableAndUDPUnsupported(t *testing.T) {

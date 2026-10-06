@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/KurisuT7/portolan/internal/agentproto"
-	"github.com/KurisuT7/portolan/internal/cores/corestest"
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/agentproto"
+	"github.com/KurisuT7/Portolan/internal/cores/corestest"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 type coreFixture struct {

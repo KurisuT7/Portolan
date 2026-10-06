@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/configgen"
-	"github.com/KurisuT7/portolan/internal/model"
-	"github.com/KurisuT7/portolan/internal/store"
-	"github.com/KurisuT7/portolan/internal/vault"
+	"github.com/KurisuT7/Portolan/internal/configgen"
+	"github.com/KurisuT7/Portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/store"
+	"github.com/KurisuT7/Portolan/internal/vault"
 )
 
 func TestLoadAndWriteDatabasePreservesRuntimeCredentials(t *testing.T) {

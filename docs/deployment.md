@@ -9,7 +9,7 @@
 和 `sha256sum`。
 
 ```bash
-curl -fsSLO https://github.com/KurisuT7/portolan/releases/latest/download/install-panel.sh
+curl -fsSLO https://github.com/KurisuT7/Portolan/releases/latest/download/install-panel.sh
 sudo sh install-panel.sh --public-url https://panel.example.com
 ```
 
@@ -57,7 +57,7 @@ sudo sh portolan_0.1.0_linux_amd64/install-panel.sh --public-url https://panel.e
 
 ```bash
 mkdir portolan && cd portolan
-curl -fsSLO https://raw.githubusercontent.com/KurisuT7/portolan/v0.1.0/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.1.0/compose.yaml
 printf 'PORTOLAN_MASTER_KEY=%s\nPORTOLAN_ADMIN_TOKEN=%s\nPORTOLAN_PUBLIC_URL=https://panel.example.com\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" > panel.env
 chmod 600 panel.env

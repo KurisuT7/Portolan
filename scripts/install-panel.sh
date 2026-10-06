@@ -6,7 +6,7 @@ set -eu
 # server or another service. Running it again upgrades the panel and keeps its
 # configuration and data.
 
-repository="KurisuT7/portolan"
+repository="KurisuT7/Portolan"
 # Release builds set this to their own version.
 release_version=""
 prefix=/usr/local/lib/portolan-panel

@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/totp"
+	"github.com/KurisuT7/Portolan/internal/totp"
 )
 
 const testAdminToken = "this-is-a-long-random-admin-token"

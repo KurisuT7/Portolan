@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/KurisuT7/portolan/internal/recovery"
+	"github.com/KurisuT7/Portolan/internal/recovery"
 )
 
 func main() {

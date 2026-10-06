@@ -1,6 +1,6 @@
 # Portolan
 
-[![CI](https://github.com/KurisuT7/portolan/actions/workflows/ci.yml/badge.svg)](https://github.com/KurisuT7/portolan/actions/workflows/ci.yml)
+[![CI](https://github.com/KurisuT7/Portolan/actions/workflows/ci.yml/badge.svg)](https://github.com/KurisuT7/Portolan/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
 Portolan 是一个自托管的代理节点与中转控制面。在一个网页控制台里管理多台 Linux 服务器上的 VLESS Reality、Shadowsocks、Snell 节点和端口转发：每台服务器运行一次安装命令，之后的建节点、改转发、导出客户端配置和升级核心都在面板里完成。
@@ -54,7 +54,7 @@ Portolan 是一个自托管的代理节点与中转控制面。在一个网页�
 在面板服务器上以 root 运行，把 `panel.example.com` 换成你的域名：
 
 ```bash
-curl -fsSLO https://github.com/KurisuT7/portolan/releases/latest/download/install-panel.sh
+curl -fsSLO https://github.com/KurisuT7/Portolan/releases/latest/download/install-panel.sh
 sudo sh install-panel.sh --public-url https://panel.example.com
 ```
 
@@ -74,7 +74,7 @@ panel.example.com {
 
 ```bash
 mkdir portolan && cd portolan
-curl -fsSLO https://raw.githubusercontent.com/KurisuT7/portolan/v0.1.0/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.1.0/compose.yaml
 printf 'PORTOLAN_MASTER_KEY=%s\nPORTOLAN_ADMIN_TOKEN=%s\nPORTOLAN_PUBLIC_URL=https://panel.example.com\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" > panel.env
 chmod 600 panel.env

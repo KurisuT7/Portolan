@@ -1,4 +1,4 @@
-module github.com/KurisuT7/portolan
+module github.com/KurisuT7/Portolan
 
 go 1.26.0
 

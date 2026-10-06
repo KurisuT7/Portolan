@@ -32,7 +32,7 @@ cp -R dist/client/. internal/webui/dist/
 rm -rf internal/webui/dist/.vite internal/webui/dist/vinext-client-entry-manifest.json
 
 echo "Building binaries for $version..."
-ldflags="-s -w -buildid= -X github.com/KurisuT7/portolan/internal/buildinfo.Version=$version"
+ldflags="-s -w -buildid= -X github.com/KurisuT7/Portolan/internal/buildinfo.Version=$version"
 for arch in amd64 arm64; do
   for command in portolan-panel portolan-agent portolan-runtime-import; do
     CGO_ENABLED=0 GOOS=linux GOARCH=$arch go build -trimpath -ldflags "$ldflags" -o "$out/bin/$arch/$command" "./cmd/$command"

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/KurisuT7/portolan/internal/agentproto"
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/agentproto"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func TestInspectReportsActiveReleaseVersionsAndUnits(t *testing.T) {

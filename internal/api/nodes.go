@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/KurisuT7/portolan/internal/configgen"
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/configgen"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {

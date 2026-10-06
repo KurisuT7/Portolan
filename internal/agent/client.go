@@ -22,11 +22,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/agentproto"
-	applyconfig "github.com/KurisuT7/portolan/internal/apply"
-	"github.com/KurisuT7/portolan/internal/buildinfo"
-	"github.com/KurisuT7/portolan/internal/discovery"
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/agentproto"
+	applyconfig "github.com/KurisuT7/Portolan/internal/apply"
+	"github.com/KurisuT7/Portolan/internal/buildinfo"
+	"github.com/KurisuT7/Portolan/internal/discovery"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 type Config struct {

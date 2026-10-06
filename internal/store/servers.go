@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func (s *Store) CreateServer(ctx context.Context, server model.Server) (created model.Server, enrollmentToken string, err error) {

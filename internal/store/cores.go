@@ -8,8 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/agentproto"
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/agentproto"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func (s *Store) SetCoreTarget(ctx context.Context, target model.CoreTarget) error {

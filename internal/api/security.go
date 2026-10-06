@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/totp"
+	"github.com/KurisuT7/Portolan/internal/totp"
 	"rsc.io/qr"
 )
 

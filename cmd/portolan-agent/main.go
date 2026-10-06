@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/agent"
-	"github.com/KurisuT7/portolan/internal/buildinfo"
+	"github.com/KurisuT7/Portolan/internal/agent"
+	"github.com/KurisuT7/Portolan/internal/buildinfo"
 )
 
 func main() {

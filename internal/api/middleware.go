@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/store"
+	"github.com/KurisuT7/Portolan/internal/store"
 )
 
 func (s *Server) withAdmin(next http.HandlerFunc) http.HandlerFunc {

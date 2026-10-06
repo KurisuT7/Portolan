@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func TestForwardUpdateRequiresSessionAndCSRFAndRetainsID(t *testing.T) {

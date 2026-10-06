@@ -24,7 +24,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 // Arches are the GOARCH values of the published Linux archives.

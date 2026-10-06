@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func (s *Server) agentBootstrap(w http.ResponseWriter, r *http.Request) {

@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/agentproto"
-	"github.com/KurisuT7/portolan/internal/configgen"
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/agentproto"
+	"github.com/KurisuT7/Portolan/internal/configgen"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 var safeID = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,96}$`)

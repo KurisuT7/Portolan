@@ -12,7 +12,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 var versionToken = regexp.MustCompile(`^[0-9][0-9A-Za-z.+-]{0,63}$`)

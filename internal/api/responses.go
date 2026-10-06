@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/KurisuT7/portolan/internal/store"
+	"github.com/KurisuT7/Portolan/internal/store"
 )
 
 func (s *Server) listJobs(w http.ResponseWriter, r *http.Request) {

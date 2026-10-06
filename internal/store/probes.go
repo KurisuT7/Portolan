@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func (s *Store) SaveForwardProbes(ctx context.Context, serverID string, probes []model.ForwardProbe) error {

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/KurisuT7/portolan/internal/cores"
-	"github.com/KurisuT7/portolan/internal/cores/corestest"
-	"github.com/KurisuT7/portolan/internal/model"
+	"github.com/KurisuT7/Portolan/internal/cores"
+	"github.com/KurisuT7/Portolan/internal/cores/corestest"
+	"github.com/KurisuT7/Portolan/internal/model"
 )
 
 func TestReleasesListOnlySupportedStableVersions(t *testing.T) {
