@@ -240,6 +240,29 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 WantedBy=multi-user.target
 EOF
 
+# Node and forward traffic is counted by the nft command. Install the
+# distribution's nftables package when it is missing. The package's own
+# service is not enabled, so the host firewall does not change.
+has_nft() { command -v nft >/dev/null 2>&1 || [ -x /usr/sbin/nft ] || [ -x /sbin/nft ]; }
+if ! has_nft; then
+  printf 'Installing nftables for node and forward traffic...\n'
+  if command -v apt-get >/dev/null 2>&1; then
+    apt_install() { DEBIAN_FRONTEND=noninteractive apt-get -o DPkg::Lock::Timeout=120 install -y -qq --no-install-recommends nftables >/dev/null; }
+    apt_install || { apt-get -o DPkg::Lock::Timeout=120 update -qq >/dev/null || true; apt_install; } || true
+  elif command -v dnf >/dev/null 2>&1; then
+    dnf install -y -q nftables >/dev/null || true
+  elif command -v yum >/dev/null 2>&1; then
+    yum install -y -q nftables >/dev/null || true
+  elif command -v apk >/dev/null 2>&1; then
+    apk add --quiet nftables >/dev/null || true
+  elif command -v zypper >/dev/null 2>&1; then
+    zypper --non-interactive --quiet install nftables >/dev/null || true
+  elif command -v pacman >/dev/null 2>&1; then
+    pacman -S --noconfirm --needed nftables >/dev/null || true
+  fi
+  has_nft || printf 'warning: nftables could not be installed; only whole-server traffic is counted until the nft command is available.\n' >&2
+fi
+
 printf 'Enrolling Portolan Agent...\n'
 /usr/local/lib/portolan/portolan-agent enroll --panel "$panel_url" --token "$enrollment_token" --config /etc/portolan/agent.json
 chown root:root /etc/portolan/agent.json

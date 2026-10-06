@@ -421,7 +421,7 @@ func TestServerAddressUpdateRetargetsExistingForwards(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := database.UpdateServer(ctx, target.ID, target.Name, "2001:0db8::168", target.Region); err != nil {
+	if _, err := database.UpdateServer(ctx, target.ID, target.Name, "2001:0db8::168", target.Region, 0); err != nil {
 		t.Fatal(err)
 	}
 	forwards, err := database.ListForwards(ctx)

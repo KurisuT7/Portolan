@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
-	"strconv"
 	"testing"
 	"time"
 
@@ -65,50 +64,65 @@ func TestAgentTrafficIsSummarizedForTheConsole(t *testing.T) {
 		server.Handler().ServeHTTP(recorder, authenticatedRequest(http.MethodGet, target, nil, cookie, ""))
 		return recorder
 	}
-	since := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
-	summary := get("/api/v1/traffic?since=" + url.QueryEscape(since))
+	summary := get("/api/v1/traffic?tz=" + url.QueryEscape("Asia/Shanghai"))
 	if summary.Code != http.StatusOK {
 		t.Fatalf("summary returned %d: %s", summary.Code, summary.Body.String())
 	}
 	var body struct {
 		Items []struct {
-			Kind string `json:"kind"`
-			ID   string `json:"id"`
-			RX   int64  `json:"rx_bytes"`
-			TX   int64  `json:"tx_bytes"`
+			Kind  string    `json:"kind"`
+			ID    string    `json:"id"`
+			Since time.Time `json:"since"`
+			RX    int64     `json:"rx_bytes"`
+			TX    int64     `json:"tx_bytes"`
 		} `json:"items"`
 	}
 	if err := json.Unmarshal(summary.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
+	shanghai, _ := time.LoadLocation("Asia/Shanghai")
+	monthStart := time.Date(time.Now().In(shanghai).Year(), time.Now().In(shanghai).Month(), 1, 0, 0, 0, 0, shanghai)
 	totals := map[string][2]int64{}
 	for _, item := range body.Items {
 		totals[item.Kind+":"+item.ID] = [2]int64{item.RX, item.TX}
+		if !item.Since.Equal(monthStart) {
+			t.Fatalf("%s:%s counts since %v, want %v", item.Kind, item.ID, item.Since, monthStart)
+		}
 	}
 	if totals["server:"+created.ID] != [2]int64{4_000, 2_000} || totals["node:"+node.ID] != [2]int64{600, 1_200} {
 		t.Fatalf("summary = %s", summary.Body.String())
 	}
-	for _, target := range []string{"/api/v1/traffic", "/api/v1/traffic?since=yesterday", "/api/v1/traffic?since=" + url.QueryEscape(time.Now().UTC().Add(time.Hour).Format(time.RFC3339))} {
+	for _, target := range []string{"/api/v1/traffic", "/api/v1/traffic?tz=Local", "/api/v1/traffic?tz=Mars%2FOlympus"} {
 		if code := get(target).Code; code != http.StatusBadRequest {
 			t.Fatalf("%s returned %d", target, code)
 		}
 	}
 
-	hour := time.Now().UTC().Truncate(time.Hour)
-	edges := strconv.FormatInt(hour.Add(-time.Hour).Unix(), 10) + "," + strconv.FormatInt(hour.Add(time.Hour).Unix(), 10)
-	history := get("/api/v1/nodes/" + node.ID + "/traffic?edges=" + edges)
+	history := get("/api/v1/nodes/" + node.ID + "/traffic?range=24h&tz=UTC")
 	var series struct {
 		Points []struct {
-			RX int64 `json:"rx_bytes"`
+			Start time.Time `json:"start"`
+			End   time.Time `json:"end"`
+			RX    int64     `json:"rx_bytes"`
 		} `json:"points"`
 	}
-	if err := json.Unmarshal(history.Body.Bytes(), &series); err != nil || history.Code != http.StatusOK || len(series.Points) != 1 || series.Points[0].RX != 600 {
+	if err := json.Unmarshal(history.Body.Bytes(), &series); err != nil || history.Code != http.StatusOK || len(series.Points) != 24 {
 		t.Fatalf("history returned %d: %s", history.Code, history.Body.String())
 	}
-	if code := get("/api/v1/nodes/" + node.ID + "/traffic?edges=1,x").Code; code != http.StatusBadRequest {
-		t.Fatalf("invalid edges returned %d", code)
+	var received int64
+	for _, point := range series.Points {
+		received += point.RX
 	}
-	if code := get("/api/v1/forwards/fwd_missing/traffic?edges=" + edges).Code; code != http.StatusNotFound {
-		t.Fatalf("missing forward returned %d", code)
+	if last := series.Points[23]; received != 600 || !last.Start.Equal(time.Now().UTC().Truncate(time.Hour)) || last.End.Sub(last.Start) != time.Hour {
+		t.Fatalf("history = %s", history.Body.String())
+	}
+	for target, want := range map[string]int{
+		"/api/v1/nodes/" + node.ID + "/traffic?range=7d&tz=UTC": http.StatusBadRequest,
+		"/api/v1/nodes/" + node.ID + "/traffic?range=12m":       http.StatusBadRequest,
+		"/api/v1/forwards/fwd_missing/traffic?range=24h&tz=UTC": http.StatusNotFound,
+	} {
+		if code := get(target).Code; code != want {
+			t.Fatalf("%s returned %d, want %d", target, code, want)
+		}
 	}
 }

@@ -1,4 +1,4 @@
-import type { ApiTraffic, ApiTrafficItem, ApiTrafficPoint, TrafficKind } from "./api";
+import type { ApiTraffic, ApiTrafficItem, ApiTrafficPoint, TrafficKind, TrafficRange } from "./api";
 
 const units = ["B", "KB", "MB", "GB", "TB", "PB"];
 
@@ -25,33 +25,38 @@ export function formatRate(bytesPerSecond: number) {
 
 export const totalBytes = (item: Pick<ApiTrafficItem, "rx_bytes" | "tx_bytes">) => item.rx_bytes + item.tx_bytes;
 
-export type TrafficRange = "24h" | "30d" | "12m";
-
-// Period edges in the browser's time zone, ending with the period now in
-// progress: hours for a day, days for a month, months for a year.
-export function trafficEdges(range: TrafficRange, now: Date) {
-  const edges: Date[] = [];
-  if (range === "24h") {
-    const hour = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours());
-    for (let offset = -23; offset <= 1; offset++) edges.push(new Date(hour.getTime() + offset * 3_600_000));
-  } else if (range === "30d") {
-    for (let offset = -29; offset <= 1; offset++) edges.push(new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset));
-  } else {
-    for (let offset = -11; offset <= 1; offset++) edges.push(new Date(now.getFullYear(), now.getMonth() + offset, 1));
-  }
-  return edges;
-}
-
-export function periodLabel(range: TrafficRange, start: Date) {
+// The hour, the day, or the calendar month or traffic cycle of a history point.
+export function periodLabel(range: TrafficRange, point: Pick<ApiTrafficPoint, "start" | "end">) {
+  const start = new Date(point.start);
   if (range === "24h") return `${pad(start.getMonth() + 1)}/${pad(start.getDate())} ${pad(start.getHours())}:00`;
   if (range === "30d") return `${pad(start.getMonth() + 1)}/${pad(start.getDate())}`;
-  return `${start.getFullYear()} 年 ${start.getMonth() + 1} 月`;
+  if (start.getDate() === 1) return `${start.getFullYear()} 年 ${start.getMonth() + 1} 月`;
+  return `${start.getFullYear()}/${days(start, new Date(point.end))}`;
 }
 
 export function axisLabel(range: TrafficRange, start: Date) {
   if (range === "24h") return `${pad(start.getHours())}:00`;
-  if (range === "30d") return `${start.getMonth() + 1}/${start.getDate()}`;
+  if (range === "30d" || start.getDate() !== 1) return `${start.getMonth() + 1}/${start.getDate()}`;
   return `${start.getMonth() + 1} 月`;
+}
+
+// "本月" for calendar months, "本期" for cycles that start on another day.
+export function cycleWord(server: Pick<ApiTrafficItem, "since"> | undefined) {
+  return !server?.since || new Date(server.since).getDate() === 1 ? "本月" : "本期";
+}
+
+// The days of the cycle that began at since and restarts on resetDay.
+export function cycleDays(since: string, resetDay: number) {
+  const start = new Date(since);
+  const next = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+  const last = new Date(next.getFullYear(), next.getMonth() + 1, 0).getDate();
+  return days(start, new Date(next.getFullYear(), next.getMonth(), Math.min(resetDay, last)));
+}
+
+// The first and last day of a period that ends at midnight before end.
+function days(start: Date, end: Date) {
+  const last = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
+  return `${pad(start.getMonth() + 1)}/${pad(start.getDate())} – ${pad(last.getMonth() + 1)}/${pad(last.getDate())}`;
 }
 
 const pad = (value: number) => String(value).padStart(2, "0");
@@ -66,11 +71,15 @@ export function trafficOf(index: TrafficIndex, kind: TrafficKind, id: string) {
   return index.get(`${kind}:${id}`);
 }
 
-// The month's traffic of every server that has reported, or null when none has.
+// The current cycle's traffic of every server that has reported, or null when
+// none has; calendar is true when every one of them counts calendar months.
 export function fleetTraffic(traffic: ApiTraffic) {
   const servers = traffic.items.filter((item) => item.kind === "server" && item.reported_at);
   if (!servers.length) return null;
-  return servers.reduce((sum, item) => ({ rx: sum.rx + item.rx_bytes, tx: sum.tx + item.tx_bytes }), { rx: 0, tx: 0 });
+  return servers.reduce(
+    (sum, item) => ({ rx: sum.rx + item.rx_bytes, tx: sum.tx + item.tx_bytes, calendar: sum.calendar && cycleWord(item) === "本月" }),
+    { rx: 0, tx: 0, calendar: true },
+  );
 }
 
 // Node and forward traffic exists only where the server counts its ports.
@@ -79,7 +88,7 @@ export function portsCounted(server: ApiTrafficItem | undefined) {
 }
 
 export function portErrorText(code: ApiTrafficItem["port_error"]) {
-  if (code === "nft_missing") return "服务器上没有 nft 命令，节点和转发的流量没有统计。安装 nftables 后会自动开始统计。";
+  if (code === "nft_missing") return "服务器上没有 nft 命令，节点和转发的流量没有统计。重装 Agent 或安装 nftables 包后会自动开始统计。";
   if (code === "nft_failed") return "nftables 没有接受计数规则，节点和转发的流量没有统计。请查看这台服务器的 Agent 日志。";
   return "";
 }

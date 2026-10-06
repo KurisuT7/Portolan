@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, ArrowRight, Check, Link2, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Activity, Check, Link2, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import type { ApiForward, ApiForwardProbeHistory, ProbeHistoryRange } from "../lib/api";
 import { serverEndpoint } from "../lib/endpoints";
 import { forwardTarget, regionParts, routeState } from "../lib/fleet";
@@ -15,7 +15,7 @@ import { engineLabels, ForwardForm, networksLabel, probeBadge } from "./forwards
 import { navigate } from "./hooks";
 import { useNodeLink } from "./nodes";
 import { TrafficPanel } from "./traffic";
-import { Badge, ConfirmDelete, CopyButton, Empty, PageHeader, Segmented, Spinner, Status, toast, type Tone } from "./ui";
+import { Address, Badge, ConfirmDelete, CopyButton, Empty, PageHeader, Segmented, Spinner, Status, toast, type Tone } from "./ui";
 
 const ranges: ReadonlyArray<{ value: ProbeHistoryRange; label: string }> = [
   { value: "1h", label: "1 小时" },
@@ -88,7 +88,7 @@ export function ForwardPage({ id }: { id: string }) {
             <span className="region">{regionParts(ingress?.region).code || "··"}</span>{ingress?.name ?? "未知服务器"}
           </a>
           <div className="endpoint-hero">
-            <span className="mono">{endpoint || `地址待识别 · :${forward.listen_port}`}</span>
+            {endpoint ? <Address value={endpoint} /> : <span className="mono">{`地址待识别 · :${forward.listen_port}`}</span>}
             {endpoint && <CopyButton value={endpoint} label="复制入口地址" />}
           </div>
           <div className="route-end-foot">
@@ -104,7 +104,6 @@ export function ForwardPage({ id }: { id: string }) {
         </div>
         <div className={`route-wire tone-${probe.tone}`} aria-hidden="true">
           <span>{probe.tone === "good" || probe.tone === "warn" ? probe.label : engineLabels[forward.engine]}</span>
-          <ArrowRight size={16} />
         </div>
         <div className="route-end">
           <span className="route-label">目标 · {target.kind}</span>
@@ -113,7 +112,7 @@ export function ForwardPage({ id }: { id: string }) {
               <span className="region">{regionParts(target.server.region).code || "··"}</span>{target.title}
             </a>
           ) : <span className="route-end-title">{target.title}</span>}
-          <div className="endpoint-hero"><span className="mono">{target.endpoint}</span></div>
+          <div className="endpoint-hero"><Address value={target.endpoint} /></div>
           {latest && <span className="sub">最近检测 {relativeTime(latest.checked_at, now)}</span>}
         </div>
       </div>

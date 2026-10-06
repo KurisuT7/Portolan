@@ -9,12 +9,12 @@ import { byteLength, milliseconds, percent } from "../lib/format";
 import { formatNodeOption, groupNodesByServer } from "../lib/nodes";
 import { routeHref } from "../lib/routing";
 import { configurationState } from "../lib/status";
-import { formatBytes, portsCounted, totalBytes, trafficOf } from "../lib/traffic";
+import { cycleWord, formatBytes, portsCounted, totalBytes, trafficOf } from "../lib/traffic";
 import { api, errorText, useFleet } from "./data";
 import { useHistory } from "./history";
 import { navigate } from "./hooks";
 import { useNodeLink } from "./nodes";
-import { Badge, CopyButton, Dialog, Empty, ErrorText, Field, PageHeader, SearchInput, Segmented, Sparkline, Spinner, Status, type Tone } from "./ui";
+import { Address, Badge, CopyButton, Dialog, Empty, ErrorText, Field, PageHeader, SearchInput, Segmented, Sparkline, Spinner, Status, type Tone } from "./ui";
 
 export const engineLabels: Record<ApiForward["engine"], string> = { "sing-box": "sing-box", realm: "Realm" };
 
@@ -93,9 +93,10 @@ function RouteCard({ forward, link }: { forward: ApiForward; link: ReturnType<ty
   const latency = !route.stopped && measured && probe.tone !== "bad" ? index.probes.get(forward.id)!.latency_ms : null;
   const summary = history?.summary;
   const traffic = trafficOf(index.traffic, "forward", forward.id);
+  const server = trafficOf(index.traffic, "server", forward.ingress_server_id);
   const facts = [
     ...(summary && summary.availability_percent != null ? [`24h 均值 ${milliseconds(summary.avg_latency_ms)}`, `失败率 ${percent(summary.loss_percent)}`] : []),
-    ...(!errors.traffic && portsCounted(trafficOf(index.traffic, "server", forward.ingress_server_id)) ? [`本月 ${formatBytes(traffic ? totalBytes(traffic) : 0)}`] : []),
+    ...(!errors.traffic && portsCounted(server) ? [`${cycleWord(server)} ${formatBytes(traffic ? totalBytes(traffic) : 0)}`] : []),
   ];
   return (
     <article className={`route-card tone-${route.tone}${forward.enabled ? "" : " is-off"}`}>
@@ -122,7 +123,7 @@ function RouteCard({ forward, link }: { forward: ApiForward; link: ReturnType<ty
       {forward.enabled && forward.networks.includes("tcp") ? <Sparkline points={history?.points ?? []} tone={probe.tone === "neutral" ? "neutral" : probe.tone} /> : <div className="spark spark-empty" />}
       <div className="route-card-foot">
         <span className="copyable">
-          <span className="mono">{endpoint || `地址待识别 · :${forward.listen_port}`}</span>
+          {endpoint ? <Address value={endpoint} /> : <span className="mono">{`地址待识别 · :${forward.listen_port}`}</span>}
           {endpoint && <CopyButton value={endpoint} label="复制入口地址" />}
         </span>
         {target.node && forward.enabled && endpoint && (
@@ -217,7 +218,7 @@ export function ForwardForm({ initial, ingressId, onClose }: { initial?: ApiForw
           <div className="saved"><Check size={18} aria-hidden="true" /><strong>{saved.name}</strong></div>
           {endpoint && saved.enabled && (
             <div className="endpoint-hero">
-              <span className="mono">{endpoint}</span>
+              <Address value={endpoint} />
               <CopyButton value={endpoint} label="复制入口地址">复制</CopyButton>
             </div>
           )}

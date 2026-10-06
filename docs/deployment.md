@@ -145,9 +145,9 @@ sing-box、Realm，逐个按 SHA-256 校验。安装内容：
 - `portolan-agent.service`（root 运行）、`portolan-sing-box.service` 和
   `portolan-realm@<转发 ID>.service`（以 `portolan` 系统账号运行）。
 
-统计节点和转发的流量需要 `nft` 命令（Debian、Ubuntu 的 `nftables` 包）。没有它时只统计服务器整机流量，安装后 Agent 自动开始统计端口流量。
+统计节点和转发的流量需要 `nft` 命令。缺少时安装器用系统的包管理器（apt、dnf、yum、apk、zypper 或 pacman）安装 `nftables` 包，但不启用该包自带的 nftables 服务，主机的防火墙规则不变。安装失败时只统计服务器整机流量，之后装好 `nft` 命令，Agent 会自动开始统计端口流量。
 
-安装器不会运行系统更新，也不会修改、停止或删除其他服务。重新运行安装命令即升级 Agent：
+安装器不会升级系统软件包，也不会修改、停止或删除其他服务。重新运行安装命令即升级 Agent：
 安装器先确认新的 sing-box 能运行并接受当前配置，再替换二进制并重启变化的服务。
 
 卸载节点上的 Portolan（会停止该服务器上 Portolan 管理的全部节点和转发），然后在面板里删除

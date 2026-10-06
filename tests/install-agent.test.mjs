@@ -69,3 +69,17 @@ test("sing-box service permits route update subscriptions", async () => {
   assert.match(generatedUnit[1], /^RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK$/m);
   assert.match(unit, /^RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK$/m);
 });
+
+test("installer adds the nft command for port traffic without enabling the nftables service", async () => {
+  const installer = await readFile(new URL("../scripts/install-agent.sh", import.meta.url), "utf8");
+  const block = installer.match(/\nif ! has_nft; then\n([\s\S]*?)\nfi\n/);
+
+  assert.ok(block, "installer should install nftables when nft is missing");
+  for (const manager of ["apt-get", "dnf", "yum", "apk", "zypper", "pacman"]) {
+    assert.match(block[1], new RegExp(`${manager} [^\\n]*nftables`), `${manager} should install nftables`);
+  }
+  // A failed package installation leaves whole-server traffic working.
+  assert.doesNotMatch(block[1], /\bdie\b/);
+  assert.doesNotMatch(installer, /systemctl [^\n]*nftables/);
+  assert.ok(block.index < installer.indexOf("systemctl restart portolan-agent.service"), "nft must be in place before the Agent starts");
+});

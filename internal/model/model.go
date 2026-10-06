@@ -44,18 +44,22 @@ var (
 )
 
 type Server struct {
-	ID          string         `json:"id"`
-	Name        string         `json:"name"`
-	Address     string         `json:"address"`
-	IPv4Address string         `json:"ipv4_address,omitempty"`
-	IPv6Address string         `json:"ipv6_address,omitempty"`
-	EgressIPv4  bool           `json:"egress_ipv4"`
-	EgressIPv6  bool           `json:"egress_ipv6"`
-	Region      string         `json:"region,omitempty"`
-	AgentStatus string         `json:"agent_status"`
-	LastSeenAt  time.Time      `json:"last_seen_at,omitempty"`
-	Runtime     *RuntimeStatus `json:"runtime,omitempty"`
-	CreatedAt   time.Time      `json:"created_at"`
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Address     string `json:"address"`
+	IPv4Address string `json:"ipv4_address,omitempty"`
+	IPv6Address string `json:"ipv6_address,omitempty"`
+	EgressIPv4  bool   `json:"egress_ipv4"`
+	EgressIPv6  bool   `json:"egress_ipv6"`
+	Region      string `json:"region,omitempty"`
+	// TrafficResetDay is the day of the month a traffic cycle starts, matching
+	// the day a provider resets its allowance. Months without that day start
+	// the cycle on their last day. 1 counts calendar months; zero means 1.
+	TrafficResetDay int            `json:"traffic_reset_day"`
+	AgentStatus     string         `json:"agent_status"`
+	LastSeenAt      time.Time      `json:"last_seen_at,omitempty"`
+	Runtime         *RuntimeStatus `json:"runtime,omitempty"`
+	CreatedAt       time.Time      `json:"created_at"`
 }
 
 // RuntimeStatus is what an Agent observes on its own host: the desired-state
@@ -199,6 +203,9 @@ func (s Server) Validate() error {
 	}
 	if len(s.Region) > 32 {
 		return errors.New("server region must not exceed 32 characters")
+	}
+	if s.TrafficResetDay < 0 || s.TrafficResetDay > 31 {
+		return errors.New("traffic reset day must be between 1 and 31")
 	}
 	return nil
 }

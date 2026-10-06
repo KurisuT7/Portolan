@@ -20,6 +20,9 @@ func (s *Store) CreateServer(ctx context.Context, server model.Server) (created 
 			return model.Server{}, "", err
 		}
 	}
+	if server.TrafficResetDay == 0 {
+		server.TrafficResetDay = 1
+	}
 	if err := server.Validate(); err != nil {
 		return model.Server{}, "", err
 	}
@@ -29,10 +32,10 @@ func (s *Store) CreateServer(ctx context.Context, server model.Server) (created 
 	}
 	now := time.Now().UTC()
 	_, err = s.db.ExecContext(ctx, `INSERT INTO servers
-			(id,name,address,ipv4_address,ipv6_address,egress_ipv4,egress_ipv6,region,
+			(id,name,address,ipv4_address,ipv6_address,egress_ipv4,egress_ipv6,region,traffic_reset_day,
 			 agent_status,enroll_token_hash,enroll_expires_at,created_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, server.ID, server.Name, server.Address, server.IPv4Address,
-		server.IPv6Address, server.EgressIPv4, server.EgressIPv6, server.Region, "pending",
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, server.ID, server.Name, server.Address, server.IPv4Address,
+		server.IPv6Address, server.EgressIPv4, server.EgressIPv6, server.Region, server.TrafficResetDay, "pending",
 		tokenHash(token), now.Add(20*time.Minute).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.Server{}, "", err
@@ -105,7 +108,9 @@ func (s *Store) Enroll(ctx context.Context, enrollmentToken, observedAddress str
 	return serverID, agentToken, nil
 }
 
-func (s *Store) UpdateServer(ctx context.Context, serverID, name, address, region string) (model.Server, error) {
+// UpdateServer changes a server's name, connection address, region and, when
+// trafficResetDay is not zero, the day its traffic cycle starts.
+func (s *Store) UpdateServer(ctx context.Context, serverID, name, address, region string, trafficResetDay int) (model.Server, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return model.Server{}, err
@@ -128,10 +133,14 @@ func (s *Store) UpdateServer(ctx context.Context, serverID, name, address, regio
 		}
 	}
 	current.Region = strings.TrimSpace(region)
+	if trafficResetDay != 0 {
+		current.TrafficResetDay = trafficResetDay
+	}
 	if err := current.Validate(); err != nil {
 		return model.Server{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE servers SET name=?,address=?,region=? WHERE id=?`, current.Name, current.Address, current.Region, serverID); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE servers SET name=?,address=?,region=?,traffic_reset_day=? WHERE id=?`,
+		current.Name, current.Address, current.Region, current.TrafficResetDay, serverID); err != nil {
 		return model.Server{}, err
 	}
 	var changed []string
@@ -418,7 +427,7 @@ func (s *Store) ListServers(ctx context.Context) ([]model.Server, error) {
 }
 
 const serverQuery = `SELECT s.id,s.name,s.address,s.ipv4_address,s.ipv6_address,s.egress_ipv4,s.egress_ipv6,
-      s.region,s.agent_status,COALESCE(s.last_seen_at,''),s.created_at,
+      s.region,s.traffic_reset_day,s.agent_status,COALESCE(s.last_seen_at,''),s.created_at,
       r.applied_revision,r.agent_version,r.sing_box_version,r.realm_version,r.units_json,r.reported_at
       FROM servers s LEFT JOIN agent_runtime r ON r.server_id=s.id`
 
@@ -457,7 +466,7 @@ func scanServer(row interface{ Scan(...any) error }) (model.Server, error) {
 	var applied sql.NullInt64
 	var agentVersion, singBox, realm, units, reported sql.NullString
 	if err := row.Scan(&server.ID, &server.Name, &server.Address, &server.IPv4Address, &server.IPv6Address,
-		&server.EgressIPv4, &server.EgressIPv6, &server.Region, &server.AgentStatus, &lastSeen, &created,
+		&server.EgressIPv4, &server.EgressIPv6, &server.Region, &server.TrafficResetDay, &server.AgentStatus, &lastSeen, &created,
 		&applied, &agentVersion, &singBox, &realm, &units, &reported); err != nil {
 		return model.Server{}, err
 	}

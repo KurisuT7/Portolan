@@ -48,7 +48,7 @@
 - sing-box 与 Realm 以非 root `portolan` 用户运行，仅保留绑定低端口所需的 `CAP_NET_BIND_SERVICE`。
 - systemd 单元启用 `NoNewPrivileges`、只读系统、私有临时目录、内核与控制组保护等限制。
 - Agent 需要写配置并调用 systemd，因此以 root 运行；写路径限制为 `/etc/portolan` 和存放核心二进制的 `/usr/local/lib/portolan`。
-- 流量计数使用独立的 nftables 表 `inet portolan`：链的策略为接受，优先级排在常规过滤之后，只有计数规则，不改变其他防火墙规则的结果，也不统计被它们丢弃的包。Agent 只写入这张表，不读取或修改其他表。
+- 流量计数使用独立的 nftables 表 `inet portolan`：链的策略为接受，优先级排在常规过滤之后，只有计数规则，不改变其他防火墙规则的结果，也不统计被它们丢弃的包。Agent 只写入这张表，不读取或修改其他表。节点安装器在缺少 `nft` 命令时安装发行版的 `nftables` 包，不启用它自带的 nftables 服务。
 
 ## 明确的不安全能力
 

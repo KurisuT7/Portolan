@@ -15,14 +15,23 @@ import (
 )
 
 // Traffic is stored per hour for a whole server (its default-route
-// interfaces), a node or a forward.
+// interfaces), a node or a forward. Each of them has one traffic_refs row,
+// and an hour with traffic is one small traffic_hourly row that refers to it.
 const (
 	TrafficServer  = "server"
 	TrafficNode    = "node"
 	TrafficForward = "forward"
 )
 
+// The periods a traffic history can show.
 const (
+	TrafficDay    = "24h"
+	TrafficMonth  = "30d"
+	TrafficCycles = "12m"
+)
+
+const (
+	// The retention covers the twelve cycles a history shows.
 	trafficRetention = 400 * 24 * time.Hour
 	// Counters observed further apart than trafficMaxGap only set a new
 	// baseline: the traffic in between can no longer be placed in time.
@@ -31,16 +40,17 @@ const (
 	// and are current for trafficRateWindow.
 	trafficRateGap    = 10 * time.Minute
 	trafficRateWindow = 2 * time.Minute
-	maxTrafficEdges   = 401
 )
 
-// TrafficItem is the traffic of one server, node or forward since the start
-// of a summary, with its rates from the latest report. Server items also carry
-// the time of the latest report and why port counters are missing, if they are.
+// TrafficItem is the traffic of one server, node or forward in the current
+// cycle of its server, which began at Since, with its rates from the latest
+// report. Server items also carry the time of the latest report and why port
+// counters are missing, if they are.
 type TrafficItem struct {
 	Kind       string    `json:"kind"`
 	ID         string    `json:"id"`
 	ServerID   string    `json:"server_id"`
+	Since      time.Time `json:"since"`
 	RX         int64     `json:"rx_bytes"`
 	TX         int64     `json:"tx_bytes"`
 	RXRate     float64   `json:"rx_rate"`
@@ -50,13 +60,13 @@ type TrafficItem struct {
 }
 
 type TrafficSummary struct {
-	Since time.Time     `json:"since"`
 	Items []TrafficItem `json:"items"`
 }
 
-// TrafficPoint is the traffic between Start and the start of the next point.
+// TrafficPoint is the traffic between Start and End.
 type TrafficPoint struct {
 	Start time.Time `json:"start"`
+	End   time.Time `json:"end"`
 	RX    int64     `json:"rx_bytes"`
 	TX    int64     `json:"tx_bytes"`
 }
@@ -139,13 +149,24 @@ func (s *Store) saveTrafficAt(ctx context.Context, serverID string, report model
 			return err
 		}
 	}
+	refs := map[trafficRef]int64{}
 	for key, value := range hours {
 		if value[0] == 0 && value[1] == 0 {
 			continue
 		}
-		if _, err := tx.ExecContext(ctx, `INSERT INTO traffic_hours(kind,ref_id,hour,server_id,rx,tx) VALUES(?,?,?,?,?,?)
-			ON CONFLICT(kind,ref_id,hour) DO UPDATE SET rx=rx+excluded.rx,tx=tx+excluded.tx`,
-			key.ref.kind, key.ref.id, key.hour, serverID, value[0], value[1]); err != nil {
+		ref, known := refs[key.ref]
+		if !known {
+			// A forward whose entrance moved belongs to its new server from now on.
+			if err := tx.QueryRowContext(ctx, `INSERT INTO traffic_refs(kind,ref_id,server_id) VALUES(?,?,?)
+				ON CONFLICT(kind,ref_id) DO UPDATE SET server_id=excluded.server_id RETURNING id`,
+				key.ref.kind, key.ref.id, serverID).Scan(&ref); err != nil {
+				return err
+			}
+			refs[key.ref] = ref
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO traffic_hourly(ref,hour,rx,tx) VALUES(?,?,?,?)
+			ON CONFLICT(ref,hour) DO UPDATE SET rx=rx+excluded.rx,tx=tx+excluded.tx`,
+			ref, key.hour, value[0], value[1]); err != nil {
 			return err
 		}
 	}
@@ -154,7 +175,8 @@ func (s *Store) saveTrafficAt(ctx context.Context, serverID string, report model
 		serverID, now.Format(time.RFC3339Nano), report.PortError); err != nil {
 		return err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM traffic_hours WHERE hour<?`, now.Add(-trafficRetention).Unix()); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM traffic_hourly WHERE ref IN (SELECT id FROM traffic_refs WHERE server_id=?) AND hour<?`,
+		serverID, now.Add(-trafficRetention).Unix()); err != nil {
 		return err
 	}
 	return tx.Commit()
@@ -242,20 +264,21 @@ func portOwners(ctx context.Context, db queryer, serverID string) (map[uint16]tr
 	return owners, rows.Err()
 }
 
-// TrafficSummary returns the traffic of every server, node and forward since
-// the given time, with current rates and the state of each server's reports.
-func (s *Store) TrafficSummary(ctx context.Context, since time.Time) (TrafficSummary, error) {
-	return s.trafficSummaryAt(ctx, since, time.Now().UTC())
+// TrafficSummary returns the traffic of every server, node and forward in
+// the current cycle of its server, with current rates and the state of each
+// server's reports. Cycles start at midnight in loc.
+func (s *Store) TrafficSummary(ctx context.Context, loc *time.Location) (TrafficSummary, error) {
+	return s.trafficSummaryAt(ctx, time.Now().In(loc))
 }
 
-func (s *Store) trafficSummaryAt(ctx context.Context, since, now time.Time) (TrafficSummary, error) {
-	summary := TrafficSummary{Since: since.UTC(), Items: []TrafficItem{}}
-	servers := map[string]bool{}
+func (s *Store) trafficSummaryAt(ctx context.Context, now time.Time) (TrafficSummary, error) {
+	summary := TrafficSummary{Items: []TrafficItem{}}
+	cycles := map[string]time.Time{}
 	entities := map[trafficRef]string{}
 	ports := map[string]map[uint16]trafficRef{}
-	rows, err := s.db.QueryContext(ctx, `SELECT 'server',id,id,0 FROM servers
-		UNION ALL SELECT 'node',id,server_id,listen_port FROM nodes
-		UNION ALL SELECT 'forward',id,ingress_server_id,listen_port FROM forwards`)
+	rows, err := s.db.QueryContext(ctx, `SELECT 'server',id,id,0,traffic_reset_day FROM servers
+		UNION ALL SELECT 'node',id,server_id,listen_port,0 FROM nodes
+		UNION ALL SELECT 'forward',id,ingress_server_id,listen_port,0 FROM forwards`)
 	if err != nil {
 		return TrafficSummary{}, err
 	}
@@ -263,13 +286,14 @@ func (s *Store) trafficSummaryAt(ctx context.Context, since, now time.Time) (Tra
 		var ref trafficRef
 		var serverID string
 		var port uint16
-		if err := rows.Scan(&ref.kind, &ref.id, &serverID, &port); err != nil {
+		var resetDay int
+		if err := rows.Scan(&ref.kind, &ref.id, &serverID, &port, &resetDay); err != nil {
 			rows.Close()
 			return TrafficSummary{}, err
 		}
 		entities[ref] = serverID
 		if ref.kind == TrafficServer {
-			servers[ref.id] = true
+			cycles[ref.id] = CycleStart(now, resetDay)
 			continue
 		}
 		if ports[serverID] == nil {
@@ -284,33 +308,42 @@ func (s *Store) trafficSummaryAt(ctx context.Context, since, now time.Time) (Tra
 	items := map[trafficRef]*TrafficItem{}
 	item := func(ref trafficRef) *TrafficItem {
 		if items[ref] == nil {
-			items[ref] = &TrafficItem{Kind: ref.kind, ID: ref.id, ServerID: entities[ref]}
+			serverID := entities[ref]
+			items[ref] = &TrafficItem{Kind: ref.kind, ID: ref.id, ServerID: serverID, Since: cycles[serverID].UTC()}
 		}
 		return items[ref]
 	}
 
-	rows, err = s.db.QueryContext(ctx, `SELECT kind,ref_id,SUM(rx),SUM(tx) FROM traffic_hours WHERE hour>=? GROUP BY kind,ref_id`, since.Unix())
-	if err != nil {
-		return TrafficSummary{}, err
+	// Servers whose cycles start together share one query.
+	starts := map[int64]bool{}
+	for _, start := range cycles {
+		starts[start.Unix()] = true
 	}
-	for rows.Next() {
-		var ref trafficRef
-		var received, sent int64
-		if err := rows.Scan(&ref.kind, &ref.id, &received, &sent); err != nil {
-			rows.Close()
+	for start := range starts {
+		rows, err := s.db.QueryContext(ctx, `SELECT r.kind,r.ref_id,SUM(h.rx),SUM(h.tx) FROM traffic_refs r CROSS JOIN traffic_hourly h
+			WHERE h.ref=r.id AND h.hour>=? GROUP BY r.id`, start)
+		if err != nil {
 			return TrafficSummary{}, err
 		}
-		if _, exists := entities[ref]; exists {
-			current := item(ref)
-			current.RX, current.TX = received, sent
+		for rows.Next() {
+			var ref trafficRef
+			var received, sent int64
+			if err := rows.Scan(&ref.kind, &ref.id, &received, &sent); err != nil {
+				rows.Close()
+				return TrafficSummary{}, err
+			}
+			if serverID, exists := entities[ref]; exists && cycles[serverID].Unix() == start {
+				current := item(ref)
+				current.RX, current.TX = received, sent
+			}
 		}
-	}
-	if err := errors.Join(rows.Err(), rows.Close()); err != nil {
-		return TrafficSummary{}, err
+		if err := errors.Join(rows.Err(), rows.Close()); err != nil {
+			return TrafficSummary{}, err
+		}
 	}
 
 	rows, err = s.db.QueryContext(ctx, `SELECT server_id,counter,rx_rate,tx_rate FROM traffic_counters WHERE observed_at>=?`,
-		now.Add(-trafficRateWindow).Format(time.RFC3339Nano))
+		now.Add(-trafficRateWindow).UTC().Format(time.RFC3339Nano))
 	if err != nil {
 		return TrafficSummary{}, err
 	}
@@ -324,7 +357,8 @@ func (s *Store) trafficSummaryAt(ctx context.Context, since, now time.Time) (Tra
 		var ref trafficRef
 		var found bool
 		if strings.HasPrefix(counter, "if:") {
-			ref, found = trafficRef{kind: TrafficServer, id: serverID}, servers[serverID]
+			_, found = cycles[serverID]
+			ref = trafficRef{kind: TrafficServer, id: serverID}
 		} else if port, err := strconv.ParseUint(strings.TrimPrefix(counter, "port:"), 10, 16); err == nil {
 			ref, found = ports[serverID][uint16(port)]
 		}
@@ -348,7 +382,7 @@ func (s *Store) trafficSummaryAt(ctx context.Context, since, now time.Time) (Tra
 			rows.Close()
 			return TrafficSummary{}, err
 		}
-		if servers[serverID] {
+		if _, exists := cycles[serverID]; exists {
 			current := item(trafficRef{kind: TrafficServer, id: serverID})
 			current.ReportedAt, _ = time.Parse(time.RFC3339Nano, reported)
 			current.PortError = portError
@@ -367,39 +401,49 @@ func (s *Store) trafficSummaryAt(ctx context.Context, since, now time.Time) (Tra
 	return summary, nil
 }
 
-// TrafficSeries sums the hourly traffic of one server, node or forward into
-// the periods between consecutive edges, which the caller chooses so that
-// days and months follow its own time zone.
-func (s *Store) TrafficSeries(ctx context.Context, kind, id string, edges []time.Time) ([]TrafficPoint, error) {
-	table := map[string]string{TrafficServer: "servers", TrafficNode: "nodes", TrafficForward: "forwards"}[kind]
-	if table == "" || len(edges) < 2 || len(edges) > maxTrafficEdges {
-		return nil, fmt.Errorf("%w: traffic history needs 2 to %d period edges", ErrInvalidInput, maxTrafficEdges)
+// TrafficHistory sums the hourly traffic of one server, node or forward into
+// the periods of span in loc: the last 24 hours, the last 30 days, or the last
+// 12 cycles of the server it is on, each ending with the period in progress.
+func (s *Store) TrafficHistory(ctx context.Context, kind, id, span string, loc *time.Location) ([]TrafficPoint, error) {
+	return s.trafficHistoryAt(ctx, kind, id, span, time.Now().In(loc))
+}
+
+func (s *Store) trafficHistoryAt(ctx context.Context, kind, id, span string, now time.Time) ([]TrafficPoint, error) {
+	query := map[string]string{
+		TrafficServer:  `SELECT traffic_reset_day FROM servers WHERE id=?`,
+		TrafficNode:    `SELECT s.traffic_reset_day FROM nodes n JOIN servers s ON s.id=n.server_id WHERE n.id=?`,
+		TrafficForward: `SELECT s.traffic_reset_day FROM forwards f JOIN servers s ON s.id=f.ingress_server_id WHERE f.id=?`,
+	}[kind]
+	if query == "" {
+		return nil, fmt.Errorf("%w: unknown traffic kind %q", ErrInvalidInput, kind)
 	}
-	for index := 1; index < len(edges); index++ {
-		if !edges[index].After(edges[index-1]) {
-			return nil, fmt.Errorf("%w: traffic history edges must increase", ErrInvalidInput)
-		}
-	}
-	if edges[len(edges)-1].Sub(edges[0]) > trafficRetention+trafficMaxGap {
-		return nil, fmt.Errorf("%w: traffic history range is too long", ErrInvalidInput)
-	}
-	var exists int
-	if err := s.db.QueryRowContext(ctx, `SELECT 1 FROM `+table+` WHERE id=?`, id).Scan(&exists); err != nil {
+	var resetDay int
+	if err := s.db.QueryRowContext(ctx, query, id).Scan(&resetDay); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrNotFound
 		}
 		return nil, err
 	}
+	edges, err := trafficPeriods(span, now, resetDay)
+	if err != nil {
+		return nil, err
+	}
+	return s.trafficSeries(ctx, kind, id, edges)
+}
+
+// trafficSeries sums the hourly traffic of one resource into the periods
+// between consecutive edges.
+func (s *Store) trafficSeries(ctx context.Context, kind, id string, edges []time.Time) ([]TrafficPoint, error) {
 	points := make([]TrafficPoint, len(edges)-1)
 	starts := make([]int64, len(edges))
 	for index, edge := range edges {
 		starts[index] = edge.Unix()
 		if index < len(points) {
-			points[index].Start = edge.UTC()
+			points[index] = TrafficPoint{Start: edge.UTC(), End: edges[index+1].UTC()}
 		}
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT hour,rx,tx FROM traffic_hours WHERE kind=? AND ref_id=? AND hour>=? AND hour<?`,
-		kind, id, starts[0], starts[len(starts)-1])
+	rows, err := s.db.QueryContext(ctx, `SELECT h.hour,h.rx,h.tx FROM traffic_refs r JOIN traffic_hourly h ON h.ref=r.id
+		WHERE r.kind=? AND r.ref_id=? AND h.hour>=? AND h.hour<?`, kind, id, starts[0], starts[len(starts)-1])
 	if err != nil {
 		return nil, err
 	}
@@ -418,8 +462,55 @@ func (s *Store) TrafficSeries(ctx context.Context, kind, id string, edges []time
 	return points, rows.Err()
 }
 
+// CycleStart returns when the traffic cycle that contains now began: midnight
+// in now's location on resetDay of this month, or of the previous month while
+// that day is still ahead. A month without resetDay starts its cycle on its
+// last day.
+func CycleStart(now time.Time, resetDay int) time.Time {
+	year, month, day := now.Date()
+	if day < cycleDay(year, month, resetDay) {
+		year, month, _ = time.Date(year, month-1, 1, 0, 0, 0, 0, time.UTC).Date()
+	}
+	return time.Date(year, month, cycleDay(year, month, resetDay), 0, 0, 0, 0, now.Location())
+}
+
+// cycleDay is the day a cycle starting on resetDay begins in the given month.
+func cycleDay(year int, month time.Month, resetDay int) int {
+	last := time.Date(year, month+1, 0, 0, 0, 0, 0, time.UTC).Day()
+	return min(max(resetDay, 1), last)
+}
+
+// trafficPeriods returns the edges of a history in now's location, ending
+// with the edge after the period in progress: 24 hours, 30 days or 12 cycles
+// that start on resetDay.
+func trafficPeriods(span string, now time.Time, resetDay int) ([]time.Time, error) {
+	year, month, day := now.Date()
+	location := now.Location()
+	var edges []time.Time
+	switch span {
+	case TrafficDay:
+		hour := time.Date(year, month, day, now.Hour(), 0, 0, 0, location)
+		for offset := -23; offset <= 1; offset++ {
+			edges = append(edges, hour.Add(time.Duration(offset)*time.Hour))
+		}
+	case TrafficMonth:
+		for offset := -29; offset <= 1; offset++ {
+			edges = append(edges, time.Date(year, month, day+offset, 0, 0, 0, 0, location))
+		}
+	case TrafficCycles:
+		year, month, _ = CycleStart(now, resetDay).Date()
+		for offset := -11; offset <= 1; offset++ {
+			cycleYear, cycleMonth, _ := time.Date(year, month+time.Month(offset), 1, 0, 0, 0, 0, time.UTC).Date()
+			edges = append(edges, time.Date(cycleYear, cycleMonth, cycleDay(cycleYear, cycleMonth, resetDay), 0, 0, 0, 0, location))
+		}
+	default:
+		return nil, fmt.Errorf("%w: traffic history range must be 24h, 30d or 12m", ErrInvalidInput)
+	}
+	return edges, nil
+}
+
 // deleteTraffic removes the history of a node or forward with the resource.
 func deleteTraffic(ctx context.Context, tx *sql.Tx, kind, id string) error {
-	_, err := tx.ExecContext(ctx, `DELETE FROM traffic_hours WHERE kind=? AND ref_id=?`, kind, id)
+	_, err := tx.ExecContext(ctx, `DELETE FROM traffic_refs WHERE kind=? AND ref_id=?`, kind, id)
 	return err
 }

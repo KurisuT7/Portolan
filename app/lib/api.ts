@@ -7,6 +7,8 @@ export type ApiServer = {
   egress_ipv4: boolean;
   egress_ipv6: boolean;
   region?: string;
+  // The day of the month a traffic cycle starts; 1 counts calendar months.
+  traffic_reset_day: number;
   agent_status: string;
   last_seen_at?: string;
   runtime?: ApiRuntime;
@@ -105,12 +107,14 @@ export type ApiForwardProbeHistory = {
 
 export type TrafficKind = "server" | "node" | "forward";
 
-// Bytes received (rx) and sent (tx) since the summary start; rates are bytes
-// per second from the latest report and zero once that report is old.
+// Bytes received (rx) and sent (tx) in the current cycle of the server, which
+// began at since; rates are bytes per second from the latest report and zero
+// once that report is old.
 export type ApiTrafficItem = {
   kind: TrafficKind;
   id: string;
   server_id: string;
+  since: string;
   rx_bytes: number;
   tx_bytes: number;
   rx_rate: number;
@@ -120,9 +124,17 @@ export type ApiTrafficItem = {
   port_error?: "nft_missing" | "nft_failed";
 };
 
-export type ApiTraffic = { since: string; items: ApiTrafficItem[] };
+export type ApiTraffic = { items: ApiTrafficItem[] };
 
-export type ApiTrafficPoint = { start: string; rx_bytes: number; tx_bytes: number };
+// The last 24 hours, 30 days or 12 traffic cycles.
+export type TrafficRange = "24h" | "30d" | "12m";
+
+export type ApiTrafficPoint = { start: string; end: string; rx_bytes: number; tx_bytes: number };
+
+// Days and traffic cycles start at midnight in the browser's time zone.
+function timeZone() {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
 
 export type ApiJob = {
   id: string;
@@ -267,17 +279,14 @@ export class PortolanApi {
     );
   }
 
-  // Traffic since the start of the month in the browser's time zone.
   async traffic(signal?: AbortSignal) {
-    const now = new Date();
-    const since = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
-    return this.request<ApiTraffic>(`/api/v1/traffic?since=${encodeURIComponent(since)}`, { signal });
+    return this.request<ApiTraffic>(`/api/v1/traffic?tz=${encodeURIComponent(timeZone())}`, { signal });
   }
 
-  async trafficHistory(kind: TrafficKind, id: string, edges: Date[], signal?: AbortSignal) {
+  async trafficHistory(kind: TrafficKind, id: string, range: TrafficRange, signal?: AbortSignal) {
     const collection = { server: "servers", node: "nodes", forward: "forwards" }[kind];
-    const query = edges.map((edge) => Math.floor(edge.getTime() / 1000)).join(",");
-    return (await this.request<{ points: ApiTrafficPoint[] }>(`/api/v1/${collection}/${encodeURIComponent(id)}/traffic?edges=${query}`, { signal })).points ?? [];
+    const query = `range=${range}&tz=${encodeURIComponent(timeZone())}`;
+    return (await this.request<{ points: ApiTrafficPoint[] }>(`/api/v1/${collection}/${encodeURIComponent(id)}/traffic?${query}`, { signal })).points ?? [];
   }
 
   async config(signal?: AbortSignal) {

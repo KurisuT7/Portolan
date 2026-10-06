@@ -10,7 +10,7 @@ export type Resource = keyof Fleet;
 export type ResourceErrors = Partial<Record<Resource, string>>;
 
 const resources: Resource[] = ["servers", "nodes", "forwards", "probes", "config", "cores", "traffic"];
-const empty: Fleet = { servers: [], nodes: [], forwards: [], probes: [], config: [], cores: { targets: [], jobs: [] }, traffic: { since: "", items: [] } };
+const empty: Fleet = { servers: [], nodes: [], forwards: [], probes: [], config: [], cores: { targets: [], jobs: [] }, traffic: { items: [] } };
 
 export const resourceNames: Record<Resource, string> = {
   servers: "服务器",

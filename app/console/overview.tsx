@@ -16,8 +16,8 @@ export function OverviewPage() {
   const problems = attention.filter((item) => item.tone !== "neutral").length;
   const unavailable = !!(errors.servers || errors.forwards || errors.probes);
   const tone = unavailable ? "neutral" : problems ? (attention.some((item) => item.tone === "bad") ? "bad" : "warn") : "good";
-  const month = errors.traffic ? null : fleetTraffic(data.traffic);
-  const monthParts = month ? byteParts(month.rx + month.tx) : null;
+  const traffic = errors.traffic ? null : fleetTraffic(data.traffic);
+  const trafficParts = traffic ? byteParts(traffic.rx + traffic.tx) : null;
   return (
     <>
       <div className="overview-top">
@@ -35,9 +35,9 @@ export function OverviewPage() {
               <strong>{summary.healthy}<small>/{summary.measured}</small></strong>
               <span>线路正常</span>
             </div>
-            <div title={month ? `接收 ${formatBytes(month.rx)} · 发送 ${formatBytes(month.tx)}` : undefined}>
-              <strong>{monthParts ? <>{monthParts.value}<small>{monthParts.unit}</small></> : "—"}</strong>
-              <span>本月流量</span>
+            <div title={traffic ? `接收 ${formatBytes(traffic.rx)} · 发送 ${formatBytes(traffic.tx)}` : undefined}>
+              <strong>{trafficParts ? <>{trafficParts.value}<small>{trafficParts.unit}</small></> : "—"}</strong>
+              <span>{!traffic || traffic.calendar ? "本月流量" : "本期流量"}</span>
             </div>
           </div>
         </section>

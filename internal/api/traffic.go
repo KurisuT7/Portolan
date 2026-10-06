@@ -3,15 +3,13 @@ package api
 import (
 	"errors"
 	"net/http"
-	"strconv"
-	"strings"
 	"time"
+	// The panel resolves the console's time zone itself, also on hosts and in
+	// images without a zoneinfo database.
+	_ "time/tzdata"
 
 	"github.com/KurisuT7/Portolan/internal/model"
 )
-
-// maxTrafficLookback bounds summaries to the hourly history the panel keeps.
-const maxTrafficLookback = 401 * 24 * time.Hour
 
 func (s *Server) saveAgentTraffic(w http.ResponseWriter, r *http.Request) {
 	serverID := r.Context().Value(agentContextKey{}).(string)
@@ -31,17 +29,15 @@ func (s *Server) saveAgentTraffic(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// trafficSummary returns the traffic of every server, node and forward since
-// the given time; the console asks from the start of the month in its own
-// time zone.
+// trafficSummary returns the traffic of every server, node and forward in
+// the current cycle of its server; the console passes its own time zone.
 func (s *Server) trafficSummary(w http.ResponseWriter, r *http.Request) {
-	since, err := time.Parse(time.RFC3339, r.URL.Query().Get("since"))
-	now := time.Now().UTC()
-	if err != nil || since.After(now) || now.Sub(since) > maxTrafficLookback {
-		writeError(w, http.StatusBadRequest, "since must be an RFC 3339 time within the kept traffic history")
+	location, err := trafficLocation(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	summary, err := s.store.TrafficSummary(r.Context(), since)
+	summary, err := s.store.TrafficSummary(r.Context(), location)
 	if err != nil {
 		s.internalError(w, err)
 		return
@@ -49,16 +45,16 @@ func (s *Server) trafficSummary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, summary)
 }
 
-// trafficHistory returns the traffic of one resource between consecutive
-// edges, given as comma-separated Unix seconds.
+// trafficHistory returns the traffic of one resource over the last 24 hours
+// (range=24h), 30 days (30d) or 12 cycles (12m) in the console's time zone.
 func (s *Server) trafficHistory(kind string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		edges, err := trafficEdges(r.URL.Query().Get("edges"))
+		location, err := trafficLocation(r)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		points, err := s.store.TrafficSeries(r.Context(), kind, r.PathValue("id"), edges)
+		points, err := s.store.TrafficHistory(r.Context(), kind, r.PathValue("id"), r.URL.Query().Get("range"), location)
 		if err != nil {
 			s.writeStoreError(w, err)
 			return
@@ -67,18 +63,12 @@ func (s *Server) trafficHistory(kind string) http.HandlerFunc {
 	}
 }
 
-func trafficEdges(raw string) ([]time.Time, error) {
-	parts := strings.Split(raw, ",")
-	if raw == "" || len(parts) > 401 {
-		return nil, errors.New("edges must list 2 to 401 Unix times")
+// trafficLocation reads the IANA time zone in which days and cycles start.
+func trafficLocation(r *http.Request) (*time.Location, error) {
+	name := r.URL.Query().Get("tz")
+	location, err := time.LoadLocation(name)
+	if name == "" || name == "Local" || err != nil {
+		return nil, errors.New("tz must be an IANA time zone such as Asia/Shanghai")
 	}
-	edges := make([]time.Time, len(parts))
-	for index, part := range parts {
-		seconds, err := strconv.ParseInt(part, 10, 64)
-		if err != nil {
-			return nil, errors.New("edges must list 2 to 401 Unix times")
-		}
-		edges[index] = time.Unix(seconds, 0).UTC()
-	}
-	return edges, nil
+	return location, nil
 }

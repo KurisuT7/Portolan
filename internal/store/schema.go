@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
 )
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -16,6 +17,7 @@ CREATE TABLE IF NOT EXISTS servers (
   egress_ipv4 INTEGER NOT NULL DEFAULT 0,
   egress_ipv6 INTEGER NOT NULL DEFAULT 0,
   region TEXT NOT NULL DEFAULT '',
+  traffic_reset_day INTEGER NOT NULL DEFAULT 1,
   agent_status TEXT NOT NULL DEFAULT 'pending',
   enroll_token_hash TEXT,
   enroll_expires_at TEXT,
@@ -109,17 +111,21 @@ CREATE TABLE IF NOT EXISTS traffic_counters (
   observed_at TEXT NOT NULL,
   PRIMARY KEY (server_id, counter)
 );
-CREATE TABLE IF NOT EXISTS traffic_hours (
+CREATE TABLE IF NOT EXISTS traffic_refs (
+  id INTEGER PRIMARY KEY,
   kind TEXT NOT NULL,
   ref_id TEXT NOT NULL,
-  hour INTEGER NOT NULL,
   server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+  UNIQUE (kind, ref_id)
+);
+CREATE INDEX IF NOT EXISTS idx_traffic_refs_server ON traffic_refs(server_id);
+CREATE TABLE IF NOT EXISTS traffic_hourly (
+  ref INTEGER NOT NULL REFERENCES traffic_refs(id) ON DELETE CASCADE,
+  hour INTEGER NOT NULL,
   rx INTEGER NOT NULL,
   tx INTEGER NOT NULL,
-  PRIMARY KEY (kind, ref_id, hour)
-);
-CREATE INDEX IF NOT EXISTS idx_traffic_hours_hour ON traffic_hours(hour);
-CREATE INDEX IF NOT EXISTS idx_traffic_hours_server ON traffic_hours(server_id);
+  PRIMARY KEY (ref, hour)
+) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS traffic_reports (
   server_id TEXT PRIMARY KEY REFERENCES servers(id) ON DELETE CASCADE,
   reported_at TEXT NOT NULL,
@@ -141,6 +147,7 @@ CREATE TABLE IF NOT EXISTS traffic_reports (
 		{table: "servers", name: "ipv6_address", definition: "TEXT NOT NULL DEFAULT ''"},
 		{table: "servers", name: "egress_ipv4", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "servers", name: "egress_ipv6", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "servers", name: "traffic_reset_day", definition: "INTEGER NOT NULL DEFAULT 1"},
 		{table: "jobs", name: "revision", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "agent_runtime", name: "agent_version", definition: "TEXT NOT NULL DEFAULT ''"},
 	} {
@@ -148,7 +155,40 @@ CREATE TABLE IF NOT EXISTS traffic_reports (
 			return err
 		}
 	}
+	if err := s.migrateTrafficHours(ctx); err != nil {
+		return err
+	}
 	return s.repairLegacyDiscoveredProfiles(ctx)
+}
+
+// migrateTrafficHours moves the hourly traffic of version 0.1.0, which
+// repeated the resource and server IDs on every row, into traffic_refs and
+// traffic_hourly. The resource's row from its latest hour names the server
+// it belongs to now.
+func (s *Store) migrateTrafficHours(ctx context.Context) error {
+	var legacy int
+	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='traffic_hours'`).Scan(&legacy); err != nil || legacy == 0 {
+		return err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	for _, statement := range []string{
+		`INSERT INTO traffic_refs(kind,ref_id,server_id)
+			SELECT kind,ref_id,server_id FROM (SELECT kind,ref_id,server_id,MAX(hour) FROM traffic_hours GROUP BY kind,ref_id) WHERE true
+			ON CONFLICT(kind,ref_id) DO NOTHING`,
+		`INSERT INTO traffic_hourly(ref,hour,rx,tx)
+			SELECT r.id,h.hour,h.rx,h.tx FROM traffic_hours h JOIN traffic_refs r ON r.kind=h.kind AND r.ref_id=h.ref_id WHERE true
+			ON CONFLICT(ref,hour) DO UPDATE SET rx=rx+excluded.rx,tx=tx+excluded.tx`,
+		`DROP TABLE traffic_hours`,
+	} {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			return fmt.Errorf("move hourly traffic: %w", err)
+		}
+	}
+	return tx.Commit()
 }
 
 func (s *Store) ensureColumn(ctx context.Context, table, column, definition string) error {

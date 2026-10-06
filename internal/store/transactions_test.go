@@ -42,7 +42,7 @@ func TestQueueFailureRollsBackResourceMutation(t *testing.T) {
 	changed, unwatch := s.WatchJobs(server.ID)
 	defer unwatch()
 	for _, run := range []func() error{
-		func() error { _, err := s.UpdateServer(ctx, server.ID, "changed", "198.51.100.1", ""); return err },
+		func() error { _, err := s.UpdateServer(ctx, server.ID, "changed", "198.51.100.1", "", 0); return err },
 		func() error { _, _, err := s.Enroll(ctx, token, "198.51.100.1"); return err },
 		func() error { return s.DeleteNode(ctx, node.ID) },
 		func() error { return s.DeleteForward(ctx, forward.ID) },

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
 import { ArrowLeft, Check, Copy, LoaderCircle, Search, X } from "lucide-react";
 import type { ApiForwardProbeHistoryPoint, ApiNode } from "../lib/api";
 import { protocolShort } from "../lib/nodes";
@@ -221,6 +221,11 @@ export function useCopied() {
     return () => clearTimeout(timer);
   }, [copied]);
   return [copied, setCopied] as const;
+}
+
+// An address that wraps after a colon, so a long IPv6 endpoint never breaks inside a group.
+export function Address({ value }: { value: string }) {
+  return <span className="mono">{value.split(":").map((part, position) => <Fragment key={position}>{position > 0 && <>:<wbr /></>}{part}</Fragment>)}</span>;
 }
 
 export function CopyButton({ value, label, children, className }: { value: string; label: string; children?: ReactNode; className?: string }) {

@@ -9,14 +9,14 @@ import { relativeTime, timeLabel } from "../lib/format";
 import { routeHref } from "../lib/routing";
 import { coresReady } from "../lib/cores";
 import { configurationState, realmForwardId, serverState, singBoxUnit, unitState } from "../lib/status";
-import { formatBytes, totalBytes, trafficOf } from "../lib/traffic";
+import { cycleWord, formatBytes, totalBytes, trafficOf } from "../lib/traffic";
 import { CoreDialog, CoreLine } from "./cores";
 import { api, errorText, useFleet } from "./data";
 import { navigate } from "./hooks";
 import { ForwardForm, RouteGrid } from "./forwards";
 import { NodeForm, NodeList } from "./nodes";
 import { Rates, TrafficBreakdown, TrafficPanel } from "./traffic";
-import { Badge, CodeBlock, ConfirmDelete, CopyButton, Dialog, Empty, ErrorText, Field, PageHeader, ProtocolTag, SearchInput, Section, Spinner, Status, toast } from "./ui";
+import { Address, Badge, CodeBlock, ConfirmDelete, CopyButton, Dialog, Empty, ErrorText, Field, PageHeader, ProtocolTag, SearchInput, Section, Spinner, Status, toast } from "./ui";
 
 function matches(server: ApiServer, query: string) {
   const text = [server.name, server.region, server.address, server.ipv4_address, server.ipv6_address].join(" ").toLowerCase();
@@ -86,7 +86,7 @@ function ServerCard({ server }: { server: ApiServer }) {
         <p className="sub">{region.place || (state.label === "待安装" ? "等待安装 Agent" : "地区待识别")}</p>
       </div>
       <span className="copyable">
-        {host ? <><span className="mono">{host}</span><CopyButton value={host} label="复制服务器地址" /></> : <span className="sub">等待上报地址</span>}
+        {host ? <><Address value={host} /><CopyButton value={host} label="复制服务器地址" /></> : <span className="sub">等待上报地址</span>}
       </span>
       <div className="ptags">
         {nodes.slice(0, 4).map((node) => <ProtocolTag key={node.id} protocol={node.protocol} port={node.listen_port} />)}
@@ -94,8 +94,8 @@ function ServerCard({ server }: { server: ApiServer }) {
         {!nodes.length && <span className="sub">无节点</span>}
       </div>
       {traffic?.reported_at && (
-        <div className="card-traffic" title={`本月接收 ${formatBytes(traffic.rx_bytes)} · 发送 ${formatBytes(traffic.tx_bytes)}`}>
-          <span>本月 <b>{formatBytes(totalBytes(traffic))}</b></span>
+        <div className="card-traffic" title={`${cycleWord(traffic)}接收 ${formatBytes(traffic.rx_bytes)} · 发送 ${formatBytes(traffic.tx_bytes)}`}>
+          <span>{cycleWord(traffic)} <b>{formatBytes(totalBytes(traffic))}</b></span>
           {state.label === "在线" && <Rates item={traffic} />}
         </div>
       )}
@@ -219,7 +219,7 @@ function ServerFacts({ server }: { server: ApiServer }) {
       <div className="fact">
         <span className="fact-label">地址</span>
         {addresses.length ? addresses.map((address) => (
-          <span className="copyable" key={address}><span className="mono">{address}</span><CopyButton value={address} label={`复制 ${address}`} /></span>
+          <span className="copyable" key={address}><Address value={address} /><CopyButton value={address} label={`复制 ${address}`} /></span>
         )) : <span className="muted">等待 Agent 上报</span>}
       </div>
       <div className="fact">
@@ -368,7 +368,7 @@ export function ServerForm({ server, onClose }: { server?: ApiServer; onClose: (
     setError("");
     try {
       if (server) {
-        await api.updateServer(server.id, { name: text("name"), address: text("address"), region: text("region") });
+        await api.updateServer(server.id, { name: text("name"), address: text("address"), region: text("region"), traffic_reset_day: Number(text("traffic_reset_day")) });
         await refresh();
         toast("已保存");
         onClose();
@@ -410,6 +410,13 @@ export function ServerForm({ server, onClose }: { server?: ApiServer; onClose: (
               </Field>
               <Field label="地区" hint="国家代码在前，例如 JP 东京">
                 <input name="region" defaultValue={server.region} />
+              </Field>
+              <Field label="流量重置日" hint="与服务商重置流量的日期一致，当天 0 点开始新的统计周期。没有这一天的月份在月末重置。">
+                <select name="traffic_reset_day" defaultValue={server.traffic_reset_day}>
+                  {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => (
+                    <option key={day} value={day}>{day === 1 ? "每月 1 日（自然月）" : `每月 ${day} 日`}</option>
+                  ))}
+                </select>
               </Field>
             </>
           )}
