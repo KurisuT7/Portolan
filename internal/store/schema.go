@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"database/sql"
-	"fmt"
 )
 
 func (s *Store) migrate(ctx context.Context) error {
@@ -155,40 +154,7 @@ CREATE TABLE IF NOT EXISTS traffic_reports (
 			return err
 		}
 	}
-	if err := s.migrateTrafficHours(ctx); err != nil {
-		return err
-	}
 	return s.repairLegacyDiscoveredProfiles(ctx)
-}
-
-// migrateTrafficHours moves the hourly traffic of version 0.1.0, which
-// repeated the resource and server IDs on every row, into traffic_refs and
-// traffic_hourly. The resource's row from its latest hour names the server
-// it belongs to now.
-func (s *Store) migrateTrafficHours(ctx context.Context) error {
-	var legacy int
-	if err := s.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='traffic_hours'`).Scan(&legacy); err != nil || legacy == 0 {
-		return err
-	}
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, statement := range []string{
-		`INSERT INTO traffic_refs(kind,ref_id,server_id)
-			SELECT kind,ref_id,server_id FROM (SELECT kind,ref_id,server_id,MAX(hour) FROM traffic_hours GROUP BY kind,ref_id) WHERE true
-			ON CONFLICT(kind,ref_id) DO NOTHING`,
-		`INSERT INTO traffic_hourly(ref,hour,rx,tx)
-			SELECT r.id,h.hour,h.rx,h.tx FROM traffic_hours h JOIN traffic_refs r ON r.kind=h.kind AND r.ref_id=h.ref_id WHERE true
-			ON CONFLICT(ref,hour) DO UPDATE SET rx=rx+excluded.rx,tx=tx+excluded.tx`,
-		`DROP TABLE traffic_hours`,
-	} {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("move hourly traffic: %w", err)
-		}
-	}
-	return tx.Commit()
 }
 
 func (s *Store) ensureColumn(ctx context.Context, table, column, definition string) error {
