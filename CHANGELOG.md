@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-09
+
 ### 新增
 
 - 面板可以在线更新 Agent：在服务器详情点「更新到」新版本，或在服务器列表一次更新全部。Agent 先校验
@@ -51,6 +53,7 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.2.0
 [0.1.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.1.1
 [0.1.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.1.0
