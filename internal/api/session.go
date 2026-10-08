@@ -133,7 +133,7 @@ func (s *Server) currentSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) sessionInfo(active session, totpEnabled bool) map[string]any {
 	return map[string]any{
 		"csrf_token": active.csrf, "expires_at": active.expiresAt, "version": buildinfo.Version,
-		"totp_enabled": totpEnabled, "geoip_provider": s.geoIPProvider,
+		"agent_version": buildinfo.AgentVersion, "totp_enabled": totpEnabled, "geoip_provider": s.geoIPProvider,
 	}
 }
 

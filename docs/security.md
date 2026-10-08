@@ -39,6 +39,7 @@
 - sing-box 和 Realm 的版本由管理员在面板选择，只列出并接受 GitHub 官方正式版（sing-box 1.14.0、Realm 2.9.4 及以上）。面板按 GitHub 为每个发布文件公布的 SHA-256 校验后才保存；没有官方摘要或摘要不符的版本不能选用。安装器和 Agent 从面板下载时再按同一摘要校验。
 - 核心不会自动更新。更新时 Agent 先用新 sing-box 对当前生效配置执行 `sing-box check`，通过才替换；重启后服务没有保持运行或没有持有端口，就换回原二进制。Realm 没有配置校验命令，只依赖重启后的检查。
 - 节点安装器要求显式的 Agent 下载地址（或本地文件）和预期 SHA-256，不会下载"最新版"；面板生成的安装命令会填好这些值。
+- Agent 不会自动更新。管理员下发更新后，Agent 只从面板下载随面板发布的 Agent 二进制，按任务中的 SHA-256 校验，确认新版本能运行并通过面板认证后才替换自身；新版本 3 分钟内没有连上面板就换回原二进制。
 - 面板发布包的 `SHA256SUMS` 随 GitHub Release 发布，安装脚本下载发布包后先校验再安装。
 
 ## 主机隔离
@@ -47,7 +48,7 @@
 - Agent 只从固定的常见路径读取常规配置文件，拒绝符号链接和超过 4 MiB 的文件；发现的外部节点经协议校验后加密入库，并永不下发回主机。
 - sing-box 与 Realm 以非 root `portolan` 用户运行，仅保留绑定低端口所需的 `CAP_NET_BIND_SERVICE`。
 - systemd 单元启用 `NoNewPrivileges`、只读系统、私有临时目录、内核与控制组保护等限制。
-- Agent 需要写配置并调用 systemd，因此以 root 运行；写路径限制为 `/etc/portolan` 和存放核心二进制的 `/usr/local/lib/portolan`。
+- Agent 需要写配置并调用 systemd，因此以 root 运行；写路径限制为 `/etc/portolan` 和存放 Agent 与核心二进制的 `/usr/local/lib/portolan`。
 - 流量计数使用独立的 nftables 表 `inet portolan`：链的策略为接受，优先级排在常规过滤之后，只有计数规则，不改变其他防火墙规则的结果，也不统计被它们丢弃的包。Agent 只写入这张表，不读取或修改其他表。节点安装器在缺少 `nft` 命令时安装发行版的 `nftables` 包，不启用它自带的 nftables 服务。
 
 ## 明确的不安全能力

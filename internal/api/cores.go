@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/KurisuT7/Portolan/internal/agentproto"
 	"github.com/KurisuT7/Portolan/internal/cores"
 	"github.com/KurisuT7/Portolan/internal/model"
 )
@@ -20,13 +21,13 @@ func (s *Server) listCores(w http.ResponseWriter, r *http.Request) {
 		s.internalError(w, err)
 		return
 	}
-	jobs, err := s.store.LatestCoreUpdates(r.Context())
+	jobs, err := s.store.LatestUpdates(r.Context())
 	if err != nil {
 		s.internalError(w, err)
 		return
 	}
 	for index := range jobs {
-		jobs[index].Result = publicCoreResult(jobs[index].State, jobs[index].Result)
+		jobs[index].Result = publicUpdateResult(jobs[index].Type, jobs[index].State, jobs[index].Result)
 	}
 	items := []model.CoreTarget{}
 	for _, core := range []model.Core{model.CoreSingBox, model.CoreRealm} {
@@ -212,23 +213,35 @@ func installedVersion(server model.Server, core model.Core) string {
 	return server.Runtime.SingBoxVersion
 }
 
-func publicCoreResult(state, result string) string {
+// publicUpdateResult passes on only the fixed summaries an Agent reports for
+// an update; anything else becomes a generic message.
+func publicUpdateResult(jobType, state, result string) string {
 	if state != "failed" {
 		return ""
 	}
-	message := "核心更新失败，请检查该服务器的 Agent 日志。"
+	message, known := "核心更新失败，请检查该服务器的 Agent 日志。", []string{
+		"核心更新请求无效。",
+		"核心文件下载或校验失败，未替换。",
+		"新版本 sing-box 不接受当前配置，未替换。",
+		"新核心没有正常运行，已换回原版本。",
+		"新核心没有正常运行，换回原版本时也出错，请立即检查服务器。",
+	}
+	if jobType == agentproto.AgentUpdateJob {
+		message, known = "Agent 更新失败，请检查该服务器的 Agent 日志。", []string{
+			"Agent 更新请求无效。",
+			"新版本 Agent 下载或校验失败，未替换。",
+			"新版本 Agent 无法在这台服务器上运行，未替换。",
+			"新版本 Agent 无法连接面板，未替换。",
+			"Agent 更新失败，未替换。",
+			"Agent 更新中断，未替换。",
+			"新版本 Agent 没有正常连接面板，已换回原版本。",
+		}
+	}
 	var reported struct {
 		Message string `json:"message"`
 	}
-	if json.Unmarshal([]byte(result), &reported) == nil {
-		switch reported.Message {
-		case "核心更新请求无效。",
-			"核心文件下载或校验失败，未替换。",
-			"新版本 sing-box 不接受当前配置，未替换。",
-			"新核心没有正常运行，已换回原版本。",
-			"新核心没有正常运行，换回原版本时也出错，请立即检查服务器。":
-			message = reported.Message
-		}
+	if json.Unmarshal([]byte(result), &reported) == nil && slices.Contains(known, reported.Message) {
+		message = reported.Message
 	}
 	encoded, _ := json.Marshal(map[string]string{"message": message})
 	return string(encoded)

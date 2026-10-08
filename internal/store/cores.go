@@ -51,7 +51,17 @@ func (s *Store) EnqueueCoreUpdate(ctx context.Context, serverID string, core mod
 	if !ok {
 		return JobSummary{}, fmt.Errorf("%w: 尚未选择 %s 的目标版本", ErrConflict, core)
 	}
-	data, err := json.Marshal(agentproto.CoreUpdatePayload{Version: target.Version, SHA256: target.SHA256})
+	return s.enqueueUpdate(ctx, serverID, core.JobType(), agentproto.CoreUpdatePayload{Version: target.Version, SHA256: target.SHA256})
+}
+
+// EnqueueAgentUpdate asks a server's Agent to replace itself with the release
+// the panel serves. A newer request replaces one not picked up yet.
+func (s *Store) EnqueueAgentUpdate(ctx context.Context, serverID string, payload agentproto.AgentUpdatePayload) (JobSummary, error) {
+	return s.enqueueUpdate(ctx, serverID, agentproto.AgentUpdateJob, payload)
+}
+
+func (s *Store) enqueueUpdate(ctx context.Context, serverID, jobType string, payload any) (JobSummary, error) {
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return JobSummary{}, err
 	}
@@ -75,27 +85,28 @@ func (s *Store) EnqueueCoreUpdate(ctx context.Context, serverID string, core mod
 		}
 		return JobSummary{}, err
 	}
-	if _, err := tx.ExecContext(ctx, `DELETE FROM jobs WHERE server_id=? AND type=? AND state='pending'`, serverID, core.JobType()); err != nil {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM jobs WHERE server_id=? AND type=? AND state='pending'`, serverID, jobType); err != nil {
 		return JobSummary{}, err
 	}
 	createdAt := time.Now().UTC()
 	if _, err := tx.ExecContext(ctx, `INSERT INTO jobs(id,server_id,type,sealed_payload,state,created_at) VALUES(?,?,?,?,?,?)`,
-		jobID, serverID, core.JobType(), sealed, "pending", createdAt.Format(time.RFC3339Nano)); err != nil {
+		jobID, serverID, jobType, sealed, "pending", createdAt.Format(time.RFC3339Nano)); err != nil {
 		return JobSummary{}, err
 	}
 	if err := s.commitAndNotify(tx, []string{serverID}); err != nil {
 		return JobSummary{}, err
 	}
-	return JobSummary{ID: jobID, ServerID: serverID, Type: core.JobType(), State: "pending", CreatedAt: createdAt}, nil
+	return JobSummary{ID: jobID, ServerID: serverID, Type: jobType, State: "pending", CreatedAt: createdAt}, nil
 }
 
-// LatestCoreUpdates returns each server's most recent update job per core.
-func (s *Store) LatestCoreUpdates(ctx context.Context) ([]JobSummary, error) {
+// LatestUpdates returns each server's most recent update job per core and
+// for the Agent itself.
+func (s *Store) LatestUpdates(ctx context.Context) ([]JobSummary, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT j.id,j.server_id,j.type,j.state,j.result,j.created_at,
 		COALESCE(j.started_at,''),COALESCE(j.finished_at,'') FROM jobs j
-		WHERE j.type IN (?,?) AND j.id=(SELECT id FROM jobs
+		WHERE j.type IN (?,?,?) AND j.id=(SELECT id FROM jobs
 		WHERE server_id=j.server_id AND type=j.type ORDER BY created_at DESC,id DESC LIMIT 1)
-		ORDER BY j.created_at DESC,j.id DESC`, model.CoreSingBox.JobType(), model.CoreRealm.JobType())
+		ORDER BY j.created_at DESC,j.id DESC`, model.CoreSingBox.JobType(), model.CoreRealm.JobType(), agentproto.AgentUpdateJob)
 	if err != nil {
 		return nil, err
 	}

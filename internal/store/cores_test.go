@@ -44,11 +44,40 @@ func TestCoreUpdatesUseTheTargetAndReplacePendingRequests(t *testing.T) {
 	if err := s.CompleteJob(ctx, server.ID, job.ID, false, `{"message":"x"}`); err != nil {
 		t.Fatal(err)
 	}
-	latest, err := s.LatestCoreUpdates(ctx)
+	latest, err := s.LatestUpdates(ctx)
 	if err != nil || len(latest) != 1 || latest[0].ID != job.ID || latest[0].State != "failed" {
 		t.Fatalf("latest = %#v err=%v", latest, err)
 	}
 	if _, err := s.EnqueueCoreUpdate(ctx, "srv_missing", model.CoreSingBox); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("missing server: %v", err)
+	}
+}
+
+func TestAgentUpdatesReplacePendingRequestsAndAppearWithCoreUpdates(t *testing.T) {
+	ctx := context.Background()
+	s, server, _ := forwardTestStore(t)
+	for _, version := range []string{"v0.2.0", "v0.2.1"} {
+		payload := agentproto.AgentUpdatePayload{Version: version, SHA256: map[string]string{"amd64": "a", "arm64": "b"}}
+		if _, err := s.EnqueueAgentUpdate(ctx, server.ID, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	job, err := s.NextJob(ctx, server.ID)
+	if err != nil || job == nil || job.Type != agentproto.AgentUpdateJob {
+		t.Fatalf("job = %#v err=%v", job, err)
+	}
+	var payload agentproto.AgentUpdatePayload
+	if err := json.Unmarshal(job.Payload, &payload); err != nil || payload.Version != "v0.2.1" || payload.SHA256["amd64"] != "a" {
+		t.Fatalf("payload = %#v err=%v", payload, err)
+	}
+	if next, err := s.NextJob(ctx, server.ID); err != nil || next != nil {
+		t.Fatalf("superseded update still queued: %#v err=%v", next, err)
+	}
+	latest, err := s.LatestUpdates(ctx)
+	if err != nil || len(latest) != 1 || latest[0].ID != job.ID || latest[0].State != "running" {
+		t.Fatalf("latest = %#v err=%v", latest, err)
+	}
+	if _, err := s.EnqueueAgentUpdate(ctx, "srv_missing", payload); !errors.Is(err, ErrNotFound) {
 		t.Fatalf("missing server: %v", err)
 	}
 }

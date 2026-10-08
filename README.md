@@ -99,7 +99,7 @@ docker compose up -d
 ## 升级
 
 - **面板**：用安装时的两条命令重新下载并运行最新的 `install-panel.sh`（可以省略 `--public-url`）。配置和数据保留，升级前的数据库副本保存在 `/var/lib/portolan-panel/backups/`；新版本启动失败时脚本会自动恢复原版本。Docker 用户修改 `compose.yaml` 里的镜像版本后运行 `docker compose up -d`。
-- **Agent**：面板升级后，服务器详情会提示 Agent 版本不一致。点「重装 Agent」生成新命令，在该服务器上运行一次。
+- **Agent**：新版面板带来更新的 Agent 时，服务器列表和详情会提示有新版本，点「更新到」或「全部更新」即可，不用登录服务器。v0.2.0 之前装的 Agent 需要先点「重装 Agent」运行一次新命令。
 - **sing-box 和 Realm**：在「核心版本」里换目标版本，先在一台服务器的详情里更新试用，再点「全部更新」。
 
 ## 配置
