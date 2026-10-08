@@ -6,6 +6,10 @@
 
 ## [Unreleased]
 
+### 新增
+
+- 新的 Portolan 图标，浏览器标签页也会显示它。
+
 ## [0.1.0] - 2026-10-07
 
 首个公开版本，状态为 Technical Preview。

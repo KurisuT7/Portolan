@@ -41,7 +41,6 @@
   --received: #c6f432;
   --sent: #7ea6ff;
   --glow: 8px;
-  --logo-shadow: drop-shadow(0 0 12px rgb(198 244 50 / 0.35));
   --card-shadow: none;
   --backdrop: rgb(0 0 0 / 0.62);
   --shadow-lg: 0 24px 80px rgb(0 0 0 / 0.65), 0 0 0 1px rgb(255 255 255 / 0.04);
@@ -86,7 +85,6 @@
   --received: #6ba300;
   --sent: #3b74e8;
   --glow: 0px;
-  --logo-shadow: none;
   --card-shadow: 0 1px 2px rgb(16 16 20 / 0.04);
   --backdrop: rgb(24 24 27 / 0.32);
   --shadow-lg: 0 24px 64px rgb(16 16 20 / 0.14), 0 0 0 1px rgb(16 16 20 / 0.04);
@@ -310,10 +308,7 @@ kbd { padding: 1px 6px; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--li
 .topbar-inner { display: flex; align-items: center; gap: 28px; max-width: 1280px; height: 60px; margin: 0 auto; padding: 0 28px; }
 
 .brand { display: inline-flex; align-items: center; gap: 10px; font-size: 16px; font-weight: 700; letter-spacing: -0.02em; }
-.logo { width: 26px; height: 26px; flex-shrink: 0; filter: var(--logo-shadow); }
-.logo rect { fill: var(--accent); }
-.logo path { fill: none; stroke: var(--accent-ink); stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
-.logo circle { fill: var(--accent-ink); }
+.logo { width: 26px; height: 26px; flex-shrink: 0; }
 
 .tabs { display: flex; gap: 2px; }
 .tabs a { padding: 7px 13px; border-radius: 9px; color: var(--text-3); font-size: 13.5px; font-weight: 500; transition: color 0.15s, background-color 0.15s; }
