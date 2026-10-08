@@ -36,7 +36,9 @@ jobs:
         run: |
           for arch in amd64 arm64; do file "release/bin/$arch/portolan-panel" | grep -q "statically linked"; done
           test "$(release/bin/amd64/portolan-panel version)" = "$GITHUB_REF_NAME"
-          test "$(release/bin/amd64/portolan-agent version)" = "$GITHUB_REF_NAME"
+          # The Agent reports the release in which it last changed.
+          agent=$(release/bin/amd64/portolan-agent version)
+          git rev-parse -q --verify "refs/tags/$agent" >/dev/null
       - name: Choose image tags
         id: tags
         run: |
