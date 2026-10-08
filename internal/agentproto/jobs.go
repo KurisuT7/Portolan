@@ -33,3 +33,13 @@ type CoreUpdatePayload struct {
 	Version string            `json:"version"`
 	SHA256  map[string]string `json:"sha256"`
 }
+
+// AgentUpdateJob is the type of the job that replaces the Agent binary.
+const AgentUpdateJob = "update-agent"
+
+// AgentUpdatePayload asks an Agent to install the Agent release the panel
+// serves. SHA256 holds the binary digest by GOARCH.
+type AgentUpdatePayload struct {
+	Version string            `json:"version"`
+	SHA256  map[string]string `json:"sha256"`
+}

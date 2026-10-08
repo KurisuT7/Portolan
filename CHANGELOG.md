@@ -6,6 +6,22 @@
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-09
+
+### 新增
+
+- 面板可以在线更新 Agent：在服务器详情点「更新到」新版本，或在服务器列表一次更新全部。Agent 先校验
+  并试运行新版本，替换后 3 分钟内没有连上面板就自动换回原版本。更新只重启 Agent，节点和转发不受影响。
+
+### 变更
+
+- Agent 的版本号改为它最后一次变化所在的发布。只改面板的发布不再提示更新 Agent。
+
+### 升级说明
+
+- 已安装的 Agent 不支持在线更新，需要在服务器详情里点「重装 Agent」并运行一次新命令，之后的
+  版本就能在面板里直接更新。
+
 ## [0.1.1] - 2026-10-09
 
 ### 新增
@@ -37,6 +53,7 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.2.0
 [0.1.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.1.1
 [0.1.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.1.0

@@ -44,8 +44,8 @@ curl http://127.0.0.1:8088/healthz
 
 ```bash
 sha256sum -c --ignore-missing SHA256SUMS
-tar -xzf portolan_0.1.1_linux_amd64.tar.gz
-sudo sh portolan_0.1.1_linux_amd64/install-panel.sh --public-url https://panel.example.com
+tar -xzf portolan_0.2.0_linux_amd64.tar.gz
+sudo sh portolan_0.2.0_linux_amd64/install-panel.sh --public-url https://panel.example.com
 ```
 
 从解压目录运行时，脚本安装该目录里的文件。
@@ -57,7 +57,7 @@ sudo sh portolan_0.1.1_linux_amd64/install-panel.sh --public-url https://panel.e
 
 ```bash
 mkdir portolan && cd portolan
-curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.1.1/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.2.0/compose.yaml
 printf 'PORTOLAN_MASTER_KEY=%s\nPORTOLAN_ADMIN_TOKEN=%s\nPORTOLAN_PUBLIC_URL=https://panel.example.com\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" > panel.env
 chmod 600 panel.env
@@ -188,7 +188,10 @@ userdel portolan
 需要回到旧版本时运行 `sudo sh install-panel.sh --version v0.1.0`（换成目标版本）。如果新版本
 已经改动过数据库，再用 `backups/` 里升级前的副本恢复。
 
-面板升级后，在每台服务器详情里点「重装 Agent」并运行新命令，让 Agent 与面板版本一致。
+Agent 的版本号是它最后一次变化所在的发布，只改面板的发布不会更新它。新面板带来更新的 Agent 时，
+服务器列表和详情会提示有新版本，点「更新到」或「全部更新」，Agent 会自行下载并替换，不用登录服务器。
+v0.2.0 之前装的 Agent 不支持在线更新，先点「重装 Agent」并在该服务器上运行一次新命令。在线更新只
+替换 Agent 二进制；某次发布需要已安装的服务器重新运行安装器时，更新记录里会写明。
 
 ## 丢失两步验证设备
 

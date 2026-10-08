@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { ArrowUpCircle, Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { agentUpdateState, agentUpdateSummary } from "../lib/agent";
 import type { ApiServer, CreateServerResponse } from "../lib/api";
 import { serverHost } from "../lib/endpoints";
 import { regionParts, targetsServer } from "../lib/fleet";
@@ -45,6 +46,7 @@ export function ServersPage() {
           </>
         }
       />
+      <AgentUpdates />
       {data.servers.length > 4 && (
         <div className="toolbar">
           <SearchInput value={query} onChange={setQuery} placeholder="搜索名称、地区或地址" />
@@ -56,6 +58,48 @@ export function ServersPage() {
       {creating && <ServerForm onClose={() => setCreating(false)} />}
       {cores && <CoreDialog onClose={() => setCores(false)} />}
     </>
+  );
+}
+
+// Offers the Agent release this panel serves to every server that can install it in place.
+function AgentUpdates() {
+  const { agentVersion, data, errors, refresh } = useFleet();
+  const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const summary = agentUpdateSummary(data.servers, agentVersion, data.cores.jobs);
+  if (errors.servers || errors.cores || (!summary.updatable && !summary.reinstall)) return null;
+  async function rollout() {
+    setBusy(true);
+    try {
+      const { queued } = await api.rolloutAgent();
+      toast(`已向 ${queued} 台服务器下发 Agent 更新`);
+      setConfirming(false);
+      await refresh();
+    } catch (failure) {
+      toast(errorText(failure), "bad");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="notice tone-neutral agent-updates">
+      <ArrowUpCircle size={17} aria-hidden="true" />
+      <div className="notice-body">
+        <strong>Agent 有新版本 {agentVersion}</strong>
+        {summary.updatable > 0 && <span>{summary.updatable} 台可以在线更新。更新时只重启 Agent，节点和转发不受影响。</span>}
+        {summary.reinstall > 0 && <span>{summary.reinstall} 台的 Agent 版本较旧，需要在服务器详情里重装一次，之后就能在线更新。</span>}
+      </div>
+      {summary.updatable > 0 && (confirming ? (
+        <span className="core-line">
+          <button className="btn btn-sm" disabled={busy} onClick={() => setConfirming(false)}>取消</button>
+          <button className="btn btn-sm btn-primary" disabled={busy} onClick={rollout}>
+            {busy && <Spinner size={14} />}确认更新 {summary.updatable} 台
+          </button>
+        </span>
+      ) : (
+        <button className="btn btn-sm" onClick={() => setConfirming(true)}>全部更新</button>
+      ))}
+    </div>
   );
 }
 
@@ -190,7 +234,7 @@ export function ServerPage({ id }: { id: string }) {
 }
 
 function ServerFacts({ server }: { server: ApiServer }) {
-  const { errors, index, now, refresh, version } = useFleet();
+  const { errors, index, now, refresh } = useFleet();
   const [busy, setBusy] = useState(false);
   const [resubmittedAfter, setResubmittedAfter] = useState<string>();
   const state = serverState(server, now);
@@ -227,7 +271,7 @@ function ServerFacts({ server }: { server: ApiServer }) {
         <Status tone={state.tone}>{state.label}</Status>
         <span className="sub" title={timeLabel(server.last_seen_at)}>心跳 {relativeTime(server.last_seen_at, now)}</span>
         {server.runtime?.agent_version && <span className="sub">版本 {server.runtime.agent_version}</span>}
-        {agentOutdated(server, version) && <span className="sub agent-outdated">与面板 {version} 不一致，重装 Agent 即可升级</span>}
+        <AgentUpdate server={server} />
       </div>
       <div className="fact">
         <span className="fact-label">出站</span>
@@ -247,10 +291,40 @@ function ServerFacts({ server }: { server: ApiServer }) {
   );
 }
 
-// Release builds report versions such as v0.1.0; development builds report "dev".
-function agentOutdated(server: ApiServer, panelVersion: string) {
-  const agent = server.runtime?.agent_version;
-  return !!agent && !!panelVersion && agent !== panelVersion && agent !== "dev" && panelVersion !== "dev";
+function AgentUpdate({ server }: { server: ApiServer }) {
+  const { agentVersion, data, errors, refresh } = useFleet();
+  const [busy, setBusy] = useState(false);
+  const state = agentUpdateState(server, agentVersion, data.cores.jobs);
+  async function update() {
+    setBusy(true);
+    try {
+      await api.updateServerAgent(server.id);
+      toast(`已向 ${server.name} 下发 Agent 更新`);
+      await refresh();
+    } catch (failure) {
+      toast(errorText(failure), "bad");
+    } finally {
+      setBusy(false);
+    }
+  }
+  switch (state.kind) {
+    case "current":
+      return null;
+    case "reinstall":
+      return <span className="sub agent-outdated">有新版本 {state.target}，重装一次 Agent 后可在线更新</span>;
+    case "updating":
+      return <Status tone="warn">{state.pending ? "等待更新" : "Agent 更新中"}</Status>;
+    default:
+      return (
+        <>
+          <button className="btn btn-sm" disabled={busy || !!errors.cores} onClick={update}>
+            {busy ? <Spinner size={14} /> : state.kind === "failed" ? <RefreshCw size={14} /> : <ArrowUpCircle size={14} />}
+            {state.kind === "failed" ? "重试更新" : `更新到 ${state.target}`}
+          </button>
+          {state.kind === "failed" && <span className="core-error">{state.detail}</span>}
+        </>
+      );
+  }
 }
 
 function RuntimeFact({ server }: { server: ApiServer }) {

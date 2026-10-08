@@ -20,6 +20,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/KurisuT7/Portolan/internal/agentproto"
@@ -41,6 +42,8 @@ type Config struct {
 	PollInterval       time.Duration `json:"poll_interval"`
 	AllowInsecureHTTP  bool          `json:"allow_insecure_http"`
 	SkipServiceActions bool          `json:"skip_service_actions,omitempty"`
+	// Path is the file the configuration was loaded from.
+	Path string `json:"-"`
 }
 
 type Client struct {
@@ -57,6 +60,14 @@ type Client struct {
 	// discovery scan; their traffic is counted like that of managed ports.
 	discoveredMu    sync.Mutex
 	discoveredPorts []uint16
+	// executable is this Agent's binary, which an update replaces.
+	executable string
+	run        func(context.Context, string, ...string) (string, error)
+	// updateSettled is set once an update left by a previous process is done.
+	updateSettled bool
+	// replacing is set while this process replaces its own binary, so that the
+	// update record it writes is left to the next process.
+	replacing atomic.Bool
 }
 
 type Enrollment struct {
@@ -86,10 +97,13 @@ func New(config Config) (*Client, error) {
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
+	executable, _ := os.Executable()
 	return &Client{
-		config:  config,
-		http:    &http.Client{Timeout: 75 * time.Second},
-		traffic: &traffic.Collector{ProcRoot: "/proc", Accounting: &traffic.Accounting{}},
+		config:     config,
+		http:       &http.Client{Timeout: 75 * time.Second},
+		traffic:    &traffic.Collector{ProcRoot: "/proc", Accounting: &traffic.Accounting{}},
+		executable: executable,
+		run:        runCommand,
 	}, nil
 }
 
@@ -226,6 +240,7 @@ func LoadConfig(path string) (Config, error) {
 	if config.PollInterval <= 0 {
 		config.PollInterval = 15 * time.Second
 	}
+	config.Path = path
 	return config, config.Validate()
 }
 
@@ -267,6 +282,9 @@ func (c *Client) runOnce(ctx context.Context) error {
 	}
 	if job != nil {
 		result, jobErr := c.executeJob(ctx, *job)
+		if errors.Is(jobErr, ErrReplaced) {
+			return jobErr
+		}
 		if err := c.completeJob(ctx, job.ID, jobErr == nil, result); err != nil {
 			return err
 		}
@@ -277,6 +295,7 @@ func (c *Client) runOnce(ctx context.Context) error {
 	if err := c.reportStatus(ctx); err != nil {
 		return err
 	}
+	c.finishUpdate(ctx)
 	return c.probeAndReport(ctx)
 }
 
@@ -299,6 +318,11 @@ func (c *Client) runJobLoop(ctx context.Context) error {
 		if job != nil {
 			c.statusMu.Lock()
 			result, jobErr := c.executeJob(ctx, *job)
+			if errors.Is(jobErr, ErrReplaced) {
+				// The next Agent process completes the job.
+				c.statusMu.Unlock()
+				return jobErr
+			}
 			if err := c.completeJob(ctx, job.ID, jobErr == nil, result); err != nil {
 				slog.Warn("Agent job completion report failed", "job", job.ID, "error", err)
 			}
@@ -317,8 +341,13 @@ func (c *Client) runJobLoop(ctx context.Context) error {
 
 func (c *Client) runStatusLoop(ctx context.Context) error {
 	for {
-		if err := c.reportStatus(ctx); err != nil && ctx.Err() == nil {
-			slog.Warn("runtime status report failed", "error", err)
+		if err := c.reportStatus(ctx); err != nil {
+			if ctx.Err() == nil {
+				slog.Warn("runtime status report failed", "error", err)
+			}
+		} else if !c.updateSettled {
+			// Reaching the panel confirms an update left by the previous process.
+			c.updateSettled = c.finishUpdate(ctx)
 		}
 		if !wait(ctx, statusInterval) {
 			return ctx.Err()
@@ -666,6 +695,8 @@ func (c *Client) executeJob(ctx context.Context, job agentproto.Job) (string, er
 		return c.updateCore(ctx, model.CoreSingBox, job)
 	case model.CoreRealm.JobType():
 		return c.updateCore(ctx, model.CoreRealm, job)
+	case agentproto.AgentUpdateJob:
+		return c.updateAgent(ctx, job)
 	default:
 		return "unsupported job type", fmt.Errorf("unsupported job type %q", job.Type)
 	}
@@ -830,15 +861,23 @@ func validatePanelURL(raw string, allowInsecureHTTP bool) error {
 	return errors.New("panel URL must use HTTPS; insecure HTTP is allowed only for loopback testing")
 }
 
+// panelError is a request the panel answered with an unexpected status.
+type panelError struct {
+	Status  int
+	message string
+}
+
+func (e *panelError) Error() string { return e.message }
+
 func responseError(response *http.Response) error {
 	body, _ := io.ReadAll(io.LimitReader(response.Body, 4096))
 	var payload struct {
 		Error string `json:"error"`
 	}
 	if json.Unmarshal(body, &payload) == nil && payload.Error != "" {
-		return fmt.Errorf("panel returned %s: %s", response.Status, payload.Error)
+		return &panelError{Status: response.StatusCode, message: fmt.Sprintf("panel returned %s: %s", response.Status, payload.Error)}
 	}
-	return fmt.Errorf("panel returned %s", response.Status)
+	return &panelError{Status: response.StatusCode, message: fmt.Sprintf("panel returned %s", response.Status)}
 }
 
 func wait(ctx context.Context, duration time.Duration) bool {

@@ -245,7 +245,11 @@ function Shell({ control }: { control: ConsoleControl }) {
   const { data, errors, fetchedAt, refresh } = control;
   const index = useMemo(() => buildIndex(data), [data]);
   const version = control.info?.version ?? "";
-  const fleet = useMemo(() => ({ data, index, errors, now: fetchedAt, refresh, version }), [data, index, errors, fetchedAt, refresh, version]);
+  const agentVersion = control.info?.agent_version ?? "";
+  const fleet = useMemo(
+    () => ({ data, index, errors, now: fetchedAt, refresh, version, agentVersion }),
+    [data, index, errors, fetchedAt, refresh, version, agentVersion],
+  );
   const [palette, setPalette] = useState(false);
   const [security, setSecurity] = useState(false);
   const [creating, setCreating] = useState<PaletteAction | null>(null);

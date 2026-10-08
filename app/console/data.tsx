@@ -148,8 +148,10 @@ export type FleetContextValue = {
   errors: ResourceErrors;
   now: number;
   refresh: () => Promise<boolean>;
-  // Version of the running panel, compared with the version each Agent reports.
+  // Version of the running panel.
   version: string;
+  // Version of the Agent this panel installs, compared with the version each Agent reports.
+  agentVersion: string;
 };
 
 const FleetContext = createContext<FleetContextValue | null>(null);

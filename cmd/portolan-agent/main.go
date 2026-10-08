@@ -24,13 +24,17 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 {
-		return errors.New("usage: portolan-agent <enroll|run|version>")
+		return errors.New("usage: portolan-agent <enroll|run|check|rollback|version>")
 	}
 	switch os.Args[1] {
 	case "enroll":
 		return enroll(os.Args[2:])
 	case "run":
 		return runAgent(os.Args[2:])
+	case "check":
+		return checkAgent(os.Args[2:])
+	case "rollback":
+		return rollbackAgent(os.Args[2:])
 	case "version":
 		fmt.Println(buildinfo.Version)
 		return nil
@@ -96,5 +100,43 @@ func runAgent(arguments []string) error {
 	if errors.Is(err, context.Canceled) {
 		return nil
 	}
+	if errors.Is(err, agent.ErrReplaced) {
+		slog.Info("exiting so that systemd starts the updated Agent")
+		return nil
+	}
 	return err
+}
+
+// checkAgent loads the configuration and authenticates to the panel. An update
+// runs it with the new binary before replacing the current one.
+func checkAgent(arguments []string) error {
+	flags := flag.NewFlagSet("check", flag.ContinueOnError)
+	configPath := flags.String("config", "/etc/portolan/agent.json", "agent configuration path")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	config, err := agent.LoadConfig(*configPath)
+	if err != nil {
+		return err
+	}
+	client, err := agent.New(config)
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	return client.Check(ctx)
+}
+
+// rollbackAgent restores the previous binary when an update was not confirmed.
+// The update schedules it as a transient systemd timer.
+func rollbackAgent(arguments []string) error {
+	flags := flag.NewFlagSet("rollback", flag.ContinueOnError)
+	configPath := flags.String("config", "/etc/portolan/agent.json", "agent configuration path")
+	if err := flags.Parse(arguments); err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+	return agent.Rollback(ctx, *configPath)
 }

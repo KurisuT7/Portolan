@@ -170,6 +170,8 @@ export type ApiSession = {
   csrf_token: string;
   expires_at: string;
   version: string;
+  // Release of the Agent this panel installs; older than version when a release changed only the panel.
+  agent_version: string;
   totp_enabled: boolean;
   // "dbip" when the region database requires DB-IP attribution.
   geoip_provider: string;
@@ -312,6 +314,14 @@ export class PortolanApi {
 
   async updateServerCore(id: string, core: CoreName) {
     return this.request<ApiJob>(`/api/v1/servers/${encodeURIComponent(id)}/cores/${core}`, { method: "POST" });
+  }
+
+  async updateServerAgent(id: string) {
+    return this.request<ApiJob>(`/api/v1/servers/${encodeURIComponent(id)}/agent-update`, { method: "POST" });
+  }
+
+  async rolloutAgent() {
+    return this.request<{ queued: number }>("/api/v1/agent-updates", { method: "POST" });
   }
 
   async syncServer(id: string) {

@@ -133,20 +133,26 @@ func TestCoreUpdatesReachOnlyAgentsThatReportRuntime(t *testing.T) {
 	if rollout.Code != http.StatusAccepted || strings.TrimSpace(rollout.Body.String()) != `{"queued":1}` {
 		t.Fatalf("rollout: %d %s", rollout.Code, rollout.Body.String())
 	}
-	jobs, err := server.store.LatestCoreUpdates(ctx)
+	jobs, err := server.store.LatestUpdates(ctx)
 	if err != nil || len(jobs) != 1 || jobs[0].ServerID != outdated.ID || jobs[0].Type != "update-realm" {
 		t.Fatalf("queued jobs = %#v err=%v", jobs, err)
 	}
 }
 
-func TestPublicCoreResultOnlyReturnsFixedMessages(t *testing.T) {
-	if got := publicCoreResult("failed", `{"message":"新核心没有正常运行，已换回原版本。","detail":"secret"}`); got != `{"message":"新核心没有正常运行，已换回原版本。"}` {
+func TestPublicUpdateResultOnlyReturnsFixedMessages(t *testing.T) {
+	if got := publicUpdateResult("update-realm", "failed", `{"message":"新核心没有正常运行，已换回原版本。","detail":"secret"}`); got != `{"message":"新核心没有正常运行，已换回原版本。"}` {
 		t.Fatalf("known result = %s", got)
 	}
-	if got := publicCoreResult("failed", `{"message":"psk=secret"}`); strings.Contains(got, "secret") {
+	if got := publicUpdateResult("update-sing-box", "failed", `{"message":"psk=secret"}`); strings.Contains(got, "secret") {
 		t.Fatalf("unsafe result exposed: %s", got)
 	}
-	if got := publicCoreResult("succeeded", `{"message":""}`); got != "" {
+	if got := publicUpdateResult("update-agent", "failed", `{"message":"新版本 Agent 没有正常连接面板，已换回原版本。"}`); got != `{"message":"新版本 Agent 没有正常连接面板，已换回原版本。"}` {
+		t.Fatalf("known Agent result = %s", got)
+	}
+	if got := publicUpdateResult("update-agent", "failed", `{"message":"新核心没有正常运行，已换回原版本。"}`); !strings.Contains(got, "Agent 更新失败") {
+		t.Fatalf("core message accepted for an Agent update: %s", got)
+	}
+	if got := publicUpdateResult("update-sing-box", "succeeded", `{"message":""}`); got != "" {
 		t.Fatalf("success result = %s", got)
 	}
 }

@@ -6,6 +6,7 @@ import { chartScale, latencyRuns, probeState } from "../app/lib/quality.ts";
 import { parseRoute, routeHref } from "../app/lib/routing.ts";
 import { configurationState, forwardUnit, realmForwardId, singBoxUnit, stoppedUnits, unitState } from "../app/lib/status.ts";
 import { coreSummary, coresReady, serverCoreState } from "../app/lib/cores.ts";
+import { agentUpdateState, agentUpdateSummary, olderRelease } from "../app/lib/agent.ts";
 
 const now = Date.parse("2026-10-05T12:00:00Z");
 const fresh = "2026-10-05T11:59:30Z";
@@ -177,4 +178,42 @@ test("core state follows the target, update jobs and Agent reports", () => {
     { total: 2, current: 0, outdated: 1, updating: 0, unreported: 1 });
   assert.equal(coresReady(cores()), false);
   assert.equal(coresReady(cores([], [target, { core: "realm", version: "2.9.6", updated_at: fresh }])), true);
+});
+
+test("releases compare numerically and development builds never count as older", () => {
+  assert.equal(olderRelease("v0.1.0", "v0.2.0"), true);
+  assert.equal(olderRelease("v0.9.3", "v0.10.0"), true);
+  assert.equal(olderRelease("v0.2.0", "v0.2.0"), false);
+  // A panel-only release keeps the earlier Agent version, and Agents installed by a newer panel stay current.
+  assert.equal(olderRelease("v0.2.1", "v0.2.0"), false);
+  assert.equal(olderRelease("dev", "v0.2.0"), false);
+  assert.equal(olderRelease("v0.2.0", "dev"), false);
+  assert.equal(olderRelease(undefined, "v0.2.0"), false);
+});
+
+test("Agent update state follows the reported version and the latest update job", () => {
+  const server = (id, version, extra = {}) => ({ id, agent_status: "online", runtime: version ? { agent_version: version } : undefined, ...extra });
+  const job = (server_id, state, result = "") => ({ id: `job_${server_id}`, server_id, type: "update-agent", state, result, created_at: fresh });
+  const servers = [
+    server("current", "v0.3.0"),
+    server("capable", "v0.2.0"),
+    server("legacy", "v0.1.0"),
+    server("updating", "v0.2.0"),
+    server("failed", "v0.2.1"),
+    server("dev", "dev"),
+    server("unreported", ""),
+    server("pending", "", { agent_status: "pending" }),
+  ];
+  const jobs = [job("updating", "running"), job("failed", "failed", JSON.stringify({ message: "新版本 Agent 无法连接面板，未替换。" })), { ...job("capable", "pending"), type: "update-sing-box" }];
+  const states = Object.fromEntries(servers.map((item) => [item.id, agentUpdateState(item, "v0.3.0", jobs)]));
+  assert.deepEqual(states.current, { kind: "current" });
+  assert.deepEqual(states.capable, { kind: "outdated", target: "v0.3.0" });
+  assert.deepEqual(states.legacy, { kind: "reinstall", target: "v0.3.0" });
+  assert.deepEqual(states.updating, { kind: "updating", pending: false });
+  assert.deepEqual(states.failed, { kind: "failed", target: "v0.3.0", detail: "新版本 Agent 无法连接面板，未替换。" });
+  assert.deepEqual(states.dev, { kind: "current" });
+  assert.deepEqual(states.unreported, { kind: "current" });
+  assert.deepEqual(agentUpdateSummary(servers, "v0.3.0", jobs), { updatable: 2, reinstall: 1, updating: 1 });
+  // A development panel has no release to offer.
+  assert.deepEqual(agentUpdateState(servers[1], "dev", []), { kind: "current" });
 });
