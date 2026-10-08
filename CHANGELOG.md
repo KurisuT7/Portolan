@@ -6,6 +6,12 @@
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-09
+
+### 新增
+
+- 新的 Portolan 图标，浏览器标签页也会显示它。
+
 ## [0.1.0] - 2026-10-07
 
 首个公开版本，状态为 Technical Preview。
@@ -31,5 +37,6 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.1.1
 [0.1.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.1.0

@@ -4,7 +4,7 @@
 # reverse proxy on the same host.
 services:
   portolan:
-    image: ghcr.io/kurisut7/portolan:0.1.0
+    image: ghcr.io/kurisut7/portolan:0.1.1
     restart: unless-stopped
     network_mode: host
     env_file: panel.env

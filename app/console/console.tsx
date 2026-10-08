@@ -32,12 +32,14 @@ export default function Console() {
   return <Shell control={control} />;
 }
 
+// Same mark as app/icon.svg: a compass star cut through a disc.
 function Logo() {
   return (
-    <svg className="logo" viewBox="0 0 24 24" aria-hidden="true">
-      <rect width="24" height="24" rx="7" />
-      <path d="M5.5 12h3.5m0 0 8-5m-8 5h9.5M9 12l8 5" />
-      <circle cx="9" cy="12" r="1.7" />
+    <svg className="logo" viewBox="0 0 32 32" aria-hidden="true">
+      <rect width="32" height="32" rx="8" fill="#141416" />
+      <rect x=".5" y=".5" width="31" height="31" rx="7.5" fill="none" stroke="#fff" strokeOpacity=".1" />
+      <circle cx="16" cy="16" r="11" fill="#c6f432" />
+      <path d="M16 2.5 18.4 13.6 29.5 16 18.4 18.4 16 29.5 13.6 18.4 2.5 16 13.6 13.6Z" fill="#141416" />
     </svg>
   );
 }
