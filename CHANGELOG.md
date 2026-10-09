@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-09
+
 ### 新增
 
 - 面板可以在控制台里更新自己：有新版本时右上角显示版本号，点开后选「更新到」。面板下载并校验新版本，
@@ -81,7 +83,8 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.0
 [0.2.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.2.1
 [0.2.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.2.0
 [0.1.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.1.1

@@ -76,7 +76,7 @@ panel.example.com {
 
 ```bash
 mkdir portolan && cd portolan
-curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.2.1/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.3.0/compose.yaml
 printf 'PORTOLAN_MASTER_KEY=%s\nPORTOLAN_ADMIN_TOKEN=%s\nPORTOLAN_PUBLIC_URL=https://panel.example.com\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" > panel.env
 chmod 600 panel.env
