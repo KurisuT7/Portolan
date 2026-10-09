@@ -224,6 +224,10 @@ func TestClientIPTrustsOnlyConfiguredProxies(t *testing.T) {
 	if got := server.clientIP(request); got != "203.0.113.9" {
 		t.Fatalf("client behind a configured proxy = %q", got)
 	}
+	request.RemoteAddr = "127.0.0.1:50000"
+	if got := server.clientIP(request); got != "203.0.113.9" {
+		t.Fatalf("configured proxies replaced the local proxy: %q", got)
+	}
 	if _, err := ParseTrustedProxies("not-an-address"); err == nil {
 		t.Fatal("an invalid trusted proxy was accepted")
 	}

@@ -76,14 +76,14 @@ panel.example.com {
 
 ```bash
 mkdir portolan && cd portolan
-curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.1.0/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.2.0/compose.yaml
 printf 'PORTOLAN_MASTER_KEY=%s\nPORTOLAN_ADMIN_TOKEN=%s\nPORTOLAN_PUBLIC_URL=https://panel.example.com\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" > panel.env
 chmod 600 panel.env
 docker compose up -d
 ```
 
-容器使用宿主机网络，同样只监听 `127.0.0.1:8088`，反向代理配置与方式一相同。管理员令牌就是 `panel.env` 里 `PORTOLAN_ADMIN_TOKEN` 的值。
+面板端口只映射到宿主机的 `127.0.0.1:8088`，反向代理配置与方式一相同。反向代理也在 Docker 里时，见 [docs/deployment.md](docs/deployment.md#docker)。管理员令牌就是 `panel.env` 里 `PORTOLAN_ADMIN_TOKEN` 的值。
 
 > `PORTOLAN_MASTER_KEY` 用来加密数据库里的协议密钥。丢失它，已保存的节点密钥就无法恢复。请把它和数据库一起备份。
 

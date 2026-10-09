@@ -91,7 +91,8 @@ scripts/build-release.sh v0.0.0-dev
 
 ## 发布流程
 
-1. 在 `CHANGELOG.md` 里把 `Unreleased` 的内容整理成新版本小节，更新 `compose.yaml` 的镜像标签。
+1. 在 `CHANGELOG.md` 里把 `Unreleased` 的内容整理成新版本小节，更新 `compose.yaml` 的镜像标签，以及
+   `README.md` 和 `docs/deployment.md` 里的版本号和下载地址。
 2. 合并到 `main` 并等待 CI 通过。
 3. 推送标签 `vX.Y.Z`。发布工作流会构建发布包和多架构镜像，并创建草稿 Release。Agent 的版本号由
    `scripts/build-release.sh` 从 git 历史得出：Agent 依赖的 Go 包或 `go.mod`/`go.sum` 最后一次变化
