@@ -1,0 +1,14 @@
+[Unit]
+Description=Update the Portolan panel to the release requested from the console
+Documentation=https://github.com/KurisuT7/Portolan
+After=network-online.target
+Wants=network-online.target
+
+# Runs as root outside the panel service, so it can replace the panel and
+# restart it. install-panel.sh accepts only a newer release tag and verifies
+# the download against the release's SHA256SUMS.
+[Service]
+Type=oneshot
+ExecStart=/bin/sh /usr/local/lib/portolan-panel/install-panel.sh --apply-request
+TimeoutStartSec=15min
+PrivateTmp=yes

@@ -10,6 +10,7 @@ User=portolan-panel
 Group=portolan-panel
 UMask=0077
 Environment=PORTOLAN_DATABASE=/var/lib/portolan-panel/portolan.db
+Environment=PORTOLAN_DEPLOYMENT=systemd
 EnvironmentFile=/etc/portolan-panel/panel.env
 ExecStart=/usr/local/lib/portolan-panel/portolan-panel
 Restart=always

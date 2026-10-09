@@ -14,7 +14,7 @@ COPY --chmod=0755 release/bin/arm64/portolan-agent /usr/local/lib/portolan-panel
 COPY LICENSE release/THIRD_PARTY_LICENSES /usr/share/doc/portolan/
 # A named volume copies this directory's owner, so the panel can write to it.
 COPY --from=state --chown=65532:65532 /state /var/lib/portolan-panel
-ENV PORTOLAN_DATABASE=/var/lib/portolan-panel/portolan.db
+ENV PORTOLAN_DATABASE=/var/lib/portolan-panel/portolan.db PORTOLAN_DEPLOYMENT=docker
 VOLUME /var/lib/portolan-panel
 USER 65532:65532
 EXPOSE 8088

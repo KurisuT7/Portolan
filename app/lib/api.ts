@@ -177,6 +177,30 @@ export type ApiSession = {
   geoip_provider: string;
 };
 
+// An update the root-owned updater ran or is running.
+export type ApiPanelUpdateRun = {
+  state: "running" | "succeeded" | "failed";
+  from: string;
+  target: string;
+  started_at: string;
+  finished_at?: string;
+};
+
+export type ApiPanelUpdate = {
+  current: string;
+  // Missing when GitHub could not be reached; check_error says why.
+  latest?: string;
+  check_error?: string;
+  deployment: "systemd" | "docker" | "";
+  // True when the panel can update itself from the console.
+  updater: boolean;
+  // A requested release the updater has not picked up yet.
+  pending?: string;
+  // The updater did not pick up the last request in time.
+  unanswered?: boolean;
+  last?: ApiPanelUpdateRun;
+};
+
 export type TotpSetup = { secret: string; uri: string; qr: { size: number; rows: string[] } };
 
 export class ApiError extends Error {
@@ -322,6 +346,19 @@ export class PortolanApi {
 
   async rolloutAgent() {
     return this.request<{ queued: number }>("/api/v1/agent-updates", { method: "POST" });
+  }
+
+  async panelUpdate(signal?: AbortSignal) {
+    return this.request<ApiPanelUpdate>("/api/v1/panel/update", { signal }, true, 20_000);
+  }
+
+  async startPanelUpdate(version: string) {
+    return this.request<{ pending: string }>("/api/v1/panel/update", { method: "POST", body: JSON.stringify({ version }) }, true, 20_000);
+  }
+
+  // The running panel version; readable without a session, so it answers while a restarted panel has no sessions.
+  async health(signal?: AbortSignal) {
+    return this.request<{ version: string }>("/healthz", { signal }, false, 5_000);
   }
 
   async syncServer(id: string) {

@@ -17,6 +17,7 @@ import { ForwardForm, ForwardsPage } from "./forwards";
 import { ForwardPage } from "./forward";
 import { CommandPalette, type PaletteAction } from "./palette";
 import { ThemeMenu, useThemeSync } from "./theme";
+import { PanelUpdateButton, PanelUpdateDialog, usePanelUpdate, type PanelUpdateControl } from "./update";
 
 const tabs: Array<{ label: string; route: Route; pages: Route["page"][] }> = [
   { label: "总览", route: { page: "overview" }, pages: ["overview"] },
@@ -252,6 +253,8 @@ function Shell({ control }: { control: ConsoleControl }) {
   );
   const [palette, setPalette] = useState(false);
   const [security, setSecurity] = useState(false);
+  const panelUpdate = usePanelUpdate();
+  const [updating, setUpdating] = useState(false);
   const [creating, setCreating] = useState<PaletteAction | null>(null);
   const pageKey = "id" in route ? `${route.page}:${route.id}` : route.page;
   useEffect(() => {
@@ -271,7 +274,14 @@ function Shell({ control }: { control: ConsoleControl }) {
     <FleetProvider value={fleet}>
       <HistoryProvider forwards={data.forwards}>
         <div className="app">
-          <Header route={route} control={control} onSearch={() => setPalette(true)} onSecurity={() => setSecurity(true)} />
+          <Header
+            route={route}
+            control={control}
+            panelUpdate={panelUpdate}
+            onSearch={() => setPalette(true)}
+            onSecurity={() => setSecurity(true)}
+            onUpdate={() => setUpdating(true)}
+          />
           <main className="main">
             <ConnectionNotice control={control} />
             {route.page === "overview" && <OverviewPage />}
@@ -283,9 +293,13 @@ function Shell({ control }: { control: ConsoleControl }) {
           </main>
           <footer className="footer">
             <span>Portolan {version}</span>
+            {panelUpdate.view.kind === "available" && (
+              <button className="footer-link" onClick={() => setUpdating(true)}>有新版本 {panelUpdate.view.target}</button>
+            )}
             {control.info?.geoip_provider === "dbip" && <a href="https://db-ip.com" target="_blank" rel="noreferrer">IP Geolocation by DB-IP</a>}
           </footer>
           {security && <SecurityDialog control={control} onClose={() => setSecurity(false)} />}
+          {updating && <PanelUpdateDialog control={panelUpdate} onClose={() => setUpdating(false)} />}
           {palette && <CommandPalette onClose={() => setPalette(false)} onAction={setCreating} />}
           {creating === "server" && <ServerForm onClose={() => setCreating(null)} />}
           {creating === "node" && data.servers.length > 0 && <NodeForm onClose={() => setCreating(null)} />}
@@ -297,7 +311,14 @@ function Shell({ control }: { control: ConsoleControl }) {
   );
 }
 
-function Header({ route, control, onSearch, onSecurity }: { route: Route; control: ConsoleControl; onSearch: () => void; onSecurity: () => void }) {
+function Header({ route, control, panelUpdate, onSearch, onSecurity, onUpdate }: {
+  route: Route;
+  control: ConsoleControl;
+  panelUpdate: PanelUpdateControl;
+  onSearch: () => void;
+  onSecurity: () => void;
+  onUpdate: () => void;
+}) {
   const failures = Object.keys(control.errors).length;
   const tone = failures === Object.keys(resourceNames).length ? "bad" : failures ? "warn" : "good";
   const syncLabel = tone === "bad" ? "连接中断" : tone === "warn" ? "部分未更新" : control.syncedAt ? clockLabel(control.syncedAt) : "同步中";
@@ -336,6 +357,7 @@ function Header({ route, control, onSearch, onSecurity }: { route: Route; contro
             <span>{syncLabel}</span>
             <RefreshCw size={13} className={control.refreshing ? "spin" : ""} aria-hidden="true" />
           </button>
+          <PanelUpdateButton view={panelUpdate.view} onClick={onUpdate} />
           <ThemeMenu />
           <button className="icon-btn" onClick={onSecurity} aria-label="两步验证" title={control.info?.totp_enabled ? "两步验证已开启" : "两步验证未开启"}>
             {control.info?.totp_enabled ? <ShieldCheck size={17} /> : <Shield size={17} />}

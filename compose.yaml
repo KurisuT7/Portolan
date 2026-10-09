@@ -5,7 +5,7 @@
 # this project's network and proxy to portolan:8088.
 services:
   portolan:
-    image: ghcr.io/kurisut7/portolan:0.2.1
+    image: ghcr.io/kurisut7/portolan:0.3.0
     restart: unless-stopped
     env_file: panel.env
     environment:
