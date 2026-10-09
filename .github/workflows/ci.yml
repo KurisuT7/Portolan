@@ -118,3 +118,13 @@ jobs:
           test "$(docker inspect -f '{{.Config.User}}' portolan:ci)" = "65532:65532"
           docker exec portolan /usr/local/lib/portolan-panel/portolan-panel version
           docker logs portolan 2>&1 | grep -q "portolan panel listening"
+      - name: Run compose.yaml on a Docker network
+        run: |
+          mkdir "$RUNNER_TEMP/compose"
+          sed -e 's#image: .*#image: portolan:ci#' -e 's#127.0.0.1:8088:8088#127.0.0.1:18089:8088#' \
+            compose.yaml > "$RUNNER_TEMP/compose/compose.yaml"
+          cp "$RUNNER_TEMP/panel.env" "$RUNNER_TEMP/compose/panel.env"
+          docker compose -f "$RUNNER_TEMP/compose/compose.yaml" up -d
+          for attempt in $(seq 1 20); do curl -fsS http://127.0.0.1:18089/healthz && break; sleep 1; done
+          curl -fsS http://127.0.0.1:18089/healthz | grep -q '"version":"v0.0.0-ci"'
+          docker compose -f "$RUNNER_TEMP/compose/compose.yaml" down

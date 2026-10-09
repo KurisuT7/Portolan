@@ -44,8 +44,8 @@ curl http://127.0.0.1:8088/healthz
 
 ```bash
 sha256sum -c --ignore-missing SHA256SUMS
-tar -xzf portolan_0.2.0_linux_amd64.tar.gz
-sudo sh portolan_0.2.0_linux_amd64/install-panel.sh --public-url https://panel.example.com
+tar -xzf portolan_0.2.1_linux_amd64.tar.gz
+sudo sh portolan_0.2.1_linux_amd64/install-panel.sh --public-url https://panel.example.com
 ```
 
 从解压目录运行时，脚本安装该目录里的文件。
@@ -57,7 +57,7 @@ sudo sh portolan_0.2.0_linux_amd64/install-panel.sh --public-url https://panel.e
 
 ```bash
 mkdir portolan && cd portolan
-curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.2.0/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.2.1/compose.yaml
 printf 'PORTOLAN_MASTER_KEY=%s\nPORTOLAN_ADMIN_TOKEN=%s\nPORTOLAN_PUBLIC_URL=https://panel.example.com\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" > panel.env
 chmod 600 panel.env
@@ -67,10 +67,23 @@ docker compose logs -f
 
 - 容器以 UID 65532 运行，数据保存在命名卷 `portolan-data`（挂载到
   `/var/lib/portolan-panel`）。改用宿主机目录时，先把目录属主设为 `65532:65532`。
-- `compose.yaml` 使用宿主机网络，面板监听宿主机的 `127.0.0.1:8088`，由宿主机上的反向代理
-  访问。不使用宿主机网络时，设置 `PORTOLAN_LISTEN=0.0.0.0:8088`，只把端口映射到
-  `127.0.0.1`，并把 Docker 网桥网关的地址段写进 `PORTOLAN_TRUSTED_PROXIES`，否则面板
-  看到的来源地址都是网关。
+- 面板在容器里监听 `0.0.0.0:8088`，端口只映射到宿主机的 `127.0.0.1:8088`，宿主机上的
+  反向代理照常访问 `127.0.0.1:8088`。不要把端口映射到公网地址：面板本身只提供 HTTP。
+- 反向代理也在 Docker 里时，把它的容器接入面板所在的网络，代理到 `portolan:8088`，不需要
+  端口映射。例如 Caddy 使用名为 `caddy` 的外部网络时，在 `compose.yaml` 里加上：
+
+  ```yaml
+  services:
+    portolan:
+      networks: [default, caddy]
+  networks:
+    caddy:
+      external: true
+  ```
+
+- `compose.yaml` 在 `environment` 里设置了 `PORTOLAN_LISTEN` 和 `PORTOLAN_TRUSTED_PROXIES`，
+  它们优先于 `panel.env`。容器收到的请求来自 Docker 网关或代理容器，所以信任列表包含私有
+  地址段；前面还有 CDN 时，把 CDN 的地址段加到这一行。
 - 升级：修改 `compose.yaml` 里的镜像标签，运行 `docker compose up -d`。
 
 ## 反向代理

@@ -1,13 +1,20 @@
 # Portolan panel. Create panel.env next to this file first (see README), then
 # run: docker compose up -d
-# The panel listens on 127.0.0.1:8088 of the host; serve it over HTTPS with a
-# reverse proxy on the same host.
+# The panel is published on 127.0.0.1:8088 of the host; serve it over HTTPS
+# with a reverse proxy on the same host, or attach a reverse proxy container to
+# this project's network and proxy to portolan:8088.
 services:
   portolan:
-    image: ghcr.io/kurisut7/portolan:0.2.0
+    image: ghcr.io/kurisut7/portolan:0.2.1
     restart: unless-stopped
-    network_mode: host
     env_file: panel.env
+    environment:
+      PORTOLAN_LISTEN: 0.0.0.0:8088
+      # Requests arrive from the Docker network gateway or a proxy container.
+      # Add CDN ranges here when a CDN sits in front of the reverse proxy.
+      PORTOLAN_TRUSTED_PROXIES: 10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7
+    ports:
+      - 127.0.0.1:8088:8088
     volumes:
       - portolan-data:/var/lib/portolan-panel
 

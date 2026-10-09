@@ -7,17 +7,15 @@ import (
 	"strings"
 )
 
-// DefaultTrustedProxies trusts only a reverse proxy on the same host.
+// DefaultTrustedProxies trusts a reverse proxy on the same host.
 var DefaultTrustedProxies = []netip.Prefix{netip.MustParsePrefix("127.0.0.0/8"), netip.MustParsePrefix("::1/128")}
 
 // ParseTrustedProxies reads a comma- or space-separated list of addresses and
-// CIDR prefixes. An empty value returns DefaultTrustedProxies.
+// CIDR prefixes and returns them after DefaultTrustedProxies, so a proxy on the
+// same host stays trusted.
 func ParseTrustedProxies(value string) ([]netip.Prefix, error) {
 	fields := strings.FieldsFunc(value, func(r rune) bool { return r == ',' || r == ' ' || r == '\t' || r == '\n' })
-	if len(fields) == 0 {
-		return DefaultTrustedProxies, nil
-	}
-	prefixes := make([]netip.Prefix, 0, len(fields))
+	prefixes := append(make([]netip.Prefix, 0, len(DefaultTrustedProxies)+len(fields)), DefaultTrustedProxies...)
 	for _, field := range fields {
 		if strings.Contains(field, "/") {
 			prefix, err := netip.ParsePrefix(field)
