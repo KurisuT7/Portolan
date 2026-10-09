@@ -346,6 +346,27 @@ kbd { padding: 1px 6px; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--li
 .sync:hover:not(:disabled) { background: var(--card-2); color: var(--text); }
 .sync:disabled { opacity: 1; cursor: progress; }
 .sync > i { width: 7px; height: 7px; border-radius: 50%; background: var(--tone); box-shadow: 0 0 var(--glow) var(--tone); }
+.update-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 11px 0 9px;
+  border: 1px solid color-mix(in srgb, var(--accent-text) 35%, transparent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font: 500 12px var(--mono);
+  cursor: pointer;
+}
+.update-trigger:hover { border-color: var(--accent-text); }
+.update-versions { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; color: var(--text-2); }
+.update-versions .mono { font-size: 15px; }
+.update-versions strong { color: var(--text); font-weight: 600; }
+.update-versions .text-link { margin-left: auto; }
+.update-progress { display: flex; align-items: center; gap: 10px; font-weight: 500; }
+.footer-link { color: var(--accent-text); cursor: pointer; }
+.footer-link:hover { text-decoration: underline; }
 
 .menu-anchor { position: relative; }
 .menu {
@@ -839,6 +860,8 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
   .brand { height: 54px; }
   .tabs { order: 3; width: calc(100% + 32px); margin: 0 -16px; padding: 0 12px 10px; overflow-x: auto; }
   .sync > span { display: none; }
+  .update-trigger { width: 30px; padding: 0; justify-content: center; }
+  .update-trigger > span { display: none; }
   .search-trigger { border: 0; background: none; padding: 0 9px; }
 
   .main { padding: 22px 16px 48px; }

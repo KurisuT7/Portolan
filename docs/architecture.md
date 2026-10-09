@@ -76,6 +76,24 @@ SHA-256：
 
 更新只重启 Agent，不重启 sing-box 和 Realm。在线更新只替换二进制，不重新运行安装器。
 
+## 面板更新
+
+面板以没有特权的 `portolan-panel` 账号运行，不能替换自己的二进制，也不能重启自己的服务。用安装脚本
+部署时，更新分成两半：
+
+1. 面板每小时最多读取一次 GitHub 上的最新正式版。管理员确认更新后，面板只把这个版本号原子写入
+   `/var/lib/portolan-panel/update-request`。
+2. root 的 `portolan-panel-update.path` 发现这个文件，启动 `portolan-panel-update.service`。它运行已安装的
+   `install-panel.sh --apply-request`：只接受比当前版本新的 `vX.Y.Z`，在
+   `/var/lib/portolan-panel-update/status.json` 记录开始，删除请求，再按手动升级的流程下载发布包、校验
+   `SHA256SUMS`，交给发布包自带的安装脚本安装，失败时换回原版本。结束后记录成功或失败。
+
+更新服务不在面板的进程组里，面板停止和重启不会中断它。控制台在面板重启期间轮询 `/healthz`，版本变成
+目标版本后重新加载；面板重启后会话失效，管理员重新登录后看到结果。超过 2 分钟没被领取的请求和 30 分钟
+没有结束的更新不再阻止下一次更新。
+
+Docker 部署的面板不能换自己的镜像，控制台只提示新版本和要改的镜像标签。
+
 Agent 注册及后续认证请求都会上报本机可作为公网入站的 IPv4/IPv6；控制面保存两种地址族并选择当前首选地址，排除私网、链路本地与 `100.64.0.0/10` 共享地址。配置本地 MMDB 后同时填充国家/城市，IP 库错误时可以在服务器详情中手动修正。
 
 Agent 还会周期性只读扫描 `/etc/sing-box`、`/usr/local/etc/sing-box`、`/etc/s-box` 与 `/etc/snell` 的常见配置。Reality 公钥可从配置显式字段、233boy 的 `public_key_` 标签或 X25519 私钥推导；独立 Snell 通过本机二进制的版本输出区分 v5/v6。探测到的节点标记为 `managed=false`，因此可以统一查看、导出和选择为转发目标，但严格排除在期望状态和删除操作之外。
@@ -92,6 +110,7 @@ Agent 使用独立于周期探测的最长 60 秒出站长轮询接收任务；�
 - `internal/apply/services.go` 负责服务差异计划、启动检查和恢复，`core.go` 负责核心替换与回退，`inspect.go` 读取生效 release、服务状态和监听端口供 Agent 上报；配置生成仍在 `internal/configgen`。
 - `internal/traffic` 读取网卡计数并维护 nftables 端口计数表；`internal/store/traffic.go` 把累计计数换算成每小时流量。
 - `internal/cores` 负责官方版本列表、下载、摘要校验和从压缩包提取核心。
+- `internal/panelupdate` 读取 Portolan 的最新发布，写入更新请求并读取更新服务记录的结果。
 - `app/console` 按功能页、表单、公共控件和远端数据管理拆分。未登录只显示连接或登录入口。
   定时刷新不重叠，取消过期请求；资源请求独立报错，过期探测不显示为当前状态。
 

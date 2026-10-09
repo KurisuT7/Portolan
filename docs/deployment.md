@@ -25,10 +25,13 @@ sudo sh install-panel.sh --public-url https://panel.example.com
 | --- | --- |
 | `/usr/local/lib/portolan-panel/portolan-panel` | 面板，网页控制台已内嵌 |
 | `/usr/local/lib/portolan-panel/portolan-runtime-import` | [离线恢复](runtime-recovery.md)工具 |
+| `/usr/local/lib/portolan-panel/install-panel.sh` | 安装脚本，在线更新时使用 |
 | `/usr/local/lib/portolan-panel/downloads/` | 提供给节点服务器的 Agent（amd64、arm64）和安装器 |
 | `/etc/portolan-panel/panel.env` | 配置和密钥，`root` 所有，权限 `0600` |
 | `/var/lib/portolan-panel/` | 数据库 `portolan.db`、核心压缩包 `cores/`、升级前的数据库副本 `backups/` |
 | `/etc/systemd/system/portolan-panel.service` | systemd 服务，以 `portolan-panel` 系统账号运行 |
+| `/etc/systemd/system/portolan-panel-update.path`、`portolan-panel-update.service` | 在线更新，见[升级与回退](#升级与回退) |
+| `/var/lib/portolan-panel-update/` | 最近一次在线更新的结果，`root` 所有 |
 
 首次安装时脚本生成主密钥和管理员令牌，并在结束时打印管理员令牌。面板默认监听
 `127.0.0.1:8088`，不直接暴露在公网。检查运行状态：
@@ -139,7 +142,11 @@ server {
 | `PORTOLAN_TRUSTED_PROXIES` | 仅本机 | 额外信任的反向代理，逗号分隔的地址或 CIDR。 |
 | `PORTOLAN_SECURE_COOKIES` | `true` | 只在本机用 HTTP 测试时设为 `false`。 |
 
-面板会从 `api.github.com` 读取 sing-box 和 Realm 的版本列表，并从 GitHub 下载发布文件。
+安装脚本在服务文件里设置 `PORTOLAN_DEPLOYMENT=systemd`，镜像设置为 `docker`，控制台据此说明
+怎样升级，不需要手动修改。
+
+面板会从 `api.github.com` 读取 sing-box 和 Realm 的版本列表，并从 GitHub 下载发布文件；
+每小时最多读取一次 Portolan 的最新版本，用来提示面板更新。
 未登录 GitHub 的 API 每小时有请求次数限制，选择版本失败时稍后重试即可。
 
 ### 地区识别（可选）
@@ -193,7 +200,16 @@ userdel portolan
 
 ## 升级与回退
 
-再次运行最新的 `install-panel.sh` 即升级。脚本停止面板，把当前二进制和数据库复制一份，
+有新版本时，控制台右上角会显示版本号。用安装脚本部署的面板点开后选「更新到」即可：面板只在
+自己的数据目录里写下请求的版本，`portolan-panel-update.path` 随即以 root 启动
+`portolan-panel-update.service`，后者运行已安装的 `install-panel.sh`，按下面的手动升级流程下载、
+校验并安装新版本。面板重启后所有会话失效，需要重新登录；登录后控制台会提示更新结果。更新服务
+只接受比当前版本新的正式版，日志在 `journalctl -u portolan-panel-update`。v0.3.0 之前的面板
+没有在线更新，先手动升级一次。
+
+Docker 部署的面板不能自己换镜像，控制台会给出要改的镜像版本，按下面 Docker 一节升级。
+
+手动升级时再次运行最新的 `install-panel.sh`。脚本停止面板，把当前二进制和数据库复制一份，
 安装新版本并检查 `/healthz`；新版本没有正常启动时自动换回原来的二进制、服务文件和数据库。
 升级成功后，升级前的数据库副本仍保留在 `/var/lib/portolan-panel/backups/`，确认无误后可以
 删除。
@@ -224,10 +240,11 @@ docker compose exec portolan /usr/local/lib/portolan-panel/portolan-panel disabl
 ## 卸载面板
 
 ```bash
-systemctl disable --now portolan-panel
-rm -f /etc/systemd/system/portolan-panel.service
+systemctl disable --now portolan-panel portolan-panel-update.path
+rm -f /etc/systemd/system/portolan-panel.service /etc/systemd/system/portolan-panel-update.path \
+  /etc/systemd/system/portolan-panel-update.service
 systemctl daemon-reload
-rm -rf /usr/local/lib/portolan-panel
+rm -rf /usr/local/lib/portolan-panel /var/lib/portolan-panel-update
 # 以下会删除配置、密钥和数据库，先确认已经备份：
 rm -rf /etc/portolan-panel /var/lib/portolan-panel
 userdel portolan-panel

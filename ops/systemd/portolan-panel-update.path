@@ -1,0 +1,10 @@
+[Unit]
+Description=Start a Portolan panel update requested from the console
+Documentation=https://github.com/KurisuT7/Portolan
+
+[Path]
+PathExists=/var/lib/portolan-panel/update-request
+Unit=portolan-panel-update.service
+
+[Install]
+WantedBy=paths.target

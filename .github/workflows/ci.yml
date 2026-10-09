@@ -106,6 +106,20 @@ jobs:
           test "$(sudo sha256sum /etc/portolan-panel/panel.env)" = "$before"
           sudo ls /var/lib/portolan-panel/backups | grep -q '^portolan-.*\.db$'
           curl -fsS http://127.0.0.1:8088/healthz
+      - name: The updater installs a requested release
+        run: |
+          systemctl is-active portolan-panel-update.path
+          test "$(sudo stat -c '%a %U' /var/lib/portolan-panel-update)" = "755 root"
+          # The panel writes this file after the console asks for an update.
+          echo v0.2.1 | sudo -u portolan-panel tee /var/lib/portolan-panel/update-request >/dev/null
+          for attempt in $(seq 1 150); do
+            grep -Eq '"state":"(succeeded|failed)"' /var/lib/portolan-panel-update/status.json 2>/dev/null && break
+            sleep 2
+          done
+          cat /var/lib/portolan-panel-update/status.json
+          grep -q '"state":"succeeded","from":"v0.0.0-ci","target":"v0.2.1"' /var/lib/portolan-panel-update/status.json
+          curl -fsS http://127.0.0.1:8088/healthz | grep -q '"version":"v0.2.1"'
+          test ! -e /var/lib/portolan-panel/update-request
       - name: Run the container image
         run: |
           docker build -t portolan:ci .

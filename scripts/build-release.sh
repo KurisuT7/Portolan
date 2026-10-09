@@ -75,7 +75,8 @@ for arch in amd64 arm64; do
   cp scripts/install-agent.sh "$stage/downloads/install-agent.sh"
   cp "$out/bin/amd64/portolan-agent" "$stage/downloads/portolan-agent-linux-amd64"
   cp "$out/bin/arm64/portolan-agent" "$stage/downloads/portolan-agent-linux-arm64"
-  cp "$out/install-panel.sh" ops/systemd/portolan-panel.service ops/Caddyfile.example \
+  cp "$out/install-panel.sh" ops/systemd/portolan-panel.service ops/systemd/portolan-panel-update.service \
+    ops/systemd/portolan-panel-update.path ops/Caddyfile.example \
     LICENSE README.md "$out/THIRD_PARTY_LICENSES" "$stage/"
   chmod 0755 "$stage/portolan-panel" "$stage/portolan-runtime-import" "$stage/install-panel.sh" \
     "$stage/downloads/install-agent.sh" "$stage/downloads/portolan-agent-linux-amd64" "$stage/downloads/portolan-agent-linux-arm64"

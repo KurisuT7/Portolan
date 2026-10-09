@@ -11,6 +11,7 @@ import (
 
 	"github.com/KurisuT7/Portolan/internal/buildinfo"
 	"github.com/KurisuT7/Portolan/internal/cores"
+	"github.com/KurisuT7/Portolan/internal/panelupdate"
 	"github.com/KurisuT7/Portolan/internal/store"
 )
 
@@ -36,6 +37,9 @@ type Server struct {
 	regionLookup   func(string) (string, error)
 	geoIPProvider  string
 	cores          *cores.Client
+	releases       *panelupdate.Releases
+	updater        *panelupdate.Updater
+	deployment     string
 	web            http.Handler
 }
 
@@ -53,6 +57,14 @@ type Config struct {
 	// GeoIPProvider is "dbip" when the region database requires DB-IP attribution.
 	GeoIPProvider string
 	Cores         *cores.Client
+	// Releases finds the latest Portolan release. Nil reads it from GitHub.
+	Releases *panelupdate.Releases
+	// Updater installs a newer release in place; nil when this installation
+	// has no updater.
+	Updater *panelupdate.Updater
+	// Deployment is "systemd" or "docker" when known, so the console can
+	// explain how to upgrade.
+	Deployment string
 	// Web serves the console. Nil serves only the API, for development with
 	// the Vite dev server.
 	Web http.Handler
@@ -84,12 +96,15 @@ func New(config Config) (*Server, error) {
 	if config.TrustedProxies == nil {
 		config.TrustedProxies = DefaultTrustedProxies
 	}
+	if config.Releases == nil {
+		config.Releases = panelupdate.NewReleases()
+	}
 	return &Server{
 		store: config.Store, adminHash: sha256.Sum256([]byte(config.AdminToken)), secureCookies: config.SecureCookies,
 		logger: config.Logger, sessions: &sessionStore{sessions: map[string]session{}}, guard: newLoginGuard(),
 		trustedProxies: config.TrustedProxies, publicURL: strings.TrimRight(config.PublicURL, "/"),
 		downloadsDir: config.DownloadsDir, regionLookup: config.RegionLookup, geoIPProvider: config.GeoIPProvider,
-		cores: config.Cores, web: config.Web,
+		cores: config.Cores, releases: config.Releases, updater: config.Updater, deployment: config.Deployment, web: config.Web,
 	}, nil
 }
 
@@ -133,6 +148,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/v1/servers/{id}/cores/{core}", s.withAdmin(s.updateServerCore))
 	mux.HandleFunc("POST /api/v1/servers/{id}/agent-update", s.withAdmin(s.updateServerAgent))
 	mux.HandleFunc("POST /api/v1/agent-updates", s.withAdmin(s.rolloutAgent))
+	mux.HandleFunc("GET /api/v1/panel/update", s.withAdmin(s.panelUpdate))
+	mux.HandleFunc("POST /api/v1/panel/update", s.withAdmin(s.startPanelUpdate))
 	mux.HandleFunc("POST /api/v1/agent/enroll", s.enrollAgent)
 	mux.HandleFunc("GET /api/v1/agent/bootstrap/{token}", s.agentBootstrap)
 	mux.HandleFunc("GET /api/v1/agent/downloads/{token}/{name}", s.agentDownload)

@@ -17,6 +17,7 @@ import (
 	"github.com/KurisuT7/Portolan/internal/buildinfo"
 	"github.com/KurisuT7/Portolan/internal/cores"
 	"github.com/KurisuT7/Portolan/internal/geoip"
+	"github.com/KurisuT7/Portolan/internal/panelupdate"
 	"github.com/KurisuT7/Portolan/internal/store"
 	"github.com/KurisuT7/Portolan/internal/vault"
 	"github.com/KurisuT7/Portolan/internal/webui"
@@ -114,10 +115,19 @@ func run() error {
 	} else {
 		slog.Warn("this build has no embedded web console; serving the API only")
 	}
+	deployment := os.Getenv("PORTOLAN_DEPLOYMENT")
+	var updater *panelupdate.Updater
+	if deployment == "systemd" {
+		installed := panelupdate.Updater{Request: panelupdate.RequestPath, Status: panelupdate.StatusPath}
+		if installed.Available() {
+			updater = &installed
+		}
+	}
 	apiServer, err := api.New(api.Config{
 		Store: database, AdminToken: adminToken, SecureCookies: *secureCookies, Logger: slog.Default(),
 		TrustedProxies: trustedProxies, PublicURL: os.Getenv("PORTOLAN_PUBLIC_URL"), DownloadsDir: downloads,
-		RegionLookup: regionLookup, GeoIPProvider: regionResolver.Provider(), Cores: cores.New(coreArchives), Web: web,
+		RegionLookup: regionLookup, GeoIPProvider: regionResolver.Provider(), Cores: cores.New(coreArchives),
+		Updater: updater, Deployment: deployment, Web: web,
 	})
 	if err != nil {
 		return err
