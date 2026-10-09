@@ -44,8 +44,8 @@ curl http://127.0.0.1:8088/healthz
 
 ```bash
 sha256sum -c --ignore-missing SHA256SUMS
-tar -xzf portolan_0.2.0_linux_amd64.tar.gz
-sudo sh portolan_0.2.0_linux_amd64/install-panel.sh --public-url https://panel.example.com
+tar -xzf portolan_0.2.1_linux_amd64.tar.gz
+sudo sh portolan_0.2.1_linux_amd64/install-panel.sh --public-url https://panel.example.com
 ```
 
 从解压目录运行时，脚本安装该目录里的文件。
@@ -57,7 +57,7 @@ sudo sh portolan_0.2.0_linux_amd64/install-panel.sh --public-url https://panel.e
 
 ```bash
 mkdir portolan && cd portolan
-curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.2.0/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.2.1/compose.yaml
 printf 'PORTOLAN_MASTER_KEY=%s\nPORTOLAN_ADMIN_TOKEN=%s\nPORTOLAN_PUBLIC_URL=https://panel.example.com\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" > panel.env
 chmod 600 panel.env
