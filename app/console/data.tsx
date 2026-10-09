@@ -61,7 +61,7 @@ export function useConsole() {
       setSession("login");
       return false;
     }
-    const now = Date.now();
+    const now = api.panelNow();
     const loaded: Partial<Fleet> = {};
     const failures: ResourceErrors = {};
     const succeeded: Partial<Record<Resource, number>> = {};

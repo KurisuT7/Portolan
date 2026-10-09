@@ -43,7 +43,8 @@ func (s *Server) listServers(w http.ResponseWriter, r *http.Request) {
 	for index := range servers {
 		servers[index].AgentStatus = observedAgentStatus(servers[index], now)
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"items": servers})
+	// server_time lets the console judge heartbeat freshness on the panel clock instead of the browser clock.
+	writeJSON(w, http.StatusOK, map[string]any{"items": servers, "server_time": now.Format(time.RFC3339Nano)})
 }
 
 func observedAgentStatus(server model.Server, now time.Time) string {

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/KurisuT7/Portolan/internal/model"
 )
@@ -61,10 +62,15 @@ func TestAgentStatusReportIsValidatedAndExposedWithServer(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	server.Handler().ServeHTTP(recorder, authenticatedRequest(http.MethodGet, "/api/v1/servers", nil, cookie, ""))
 	var listed struct {
-		Items []model.Server `json:"items"`
+		Items      []model.Server `json:"items"`
+		ServerTime time.Time      `json:"server_time"`
 	}
 	if err := json.Unmarshal(recorder.Body.Bytes(), &listed); err != nil || len(listed.Items) != 1 {
 		t.Fatalf("server list: %s", recorder.Body.String())
+	}
+	// The console measures heartbeat age against this clock, so it never precedes a stored heartbeat.
+	if listed.ServerTime.Before(listed.Items[0].LastSeenAt) {
+		t.Fatalf("server_time %s precedes last_seen_at %s", listed.ServerTime, listed.Items[0].LastSeenAt)
 	}
 	runtime := listed.Items[0].Runtime
 	if runtime == nil || runtime.RealmVersion != "2.9.4" || len(runtime.Units) != 1 || runtime.Units[0].ActiveState != "failed" {

@@ -217,6 +217,13 @@ export class ApiError extends Error {
 
 export class PortolanApi {
   private csrf = "";
+  // Panel clock minus browser clock, measured from the last server list.
+  private clockOffset = 0;
+
+  // Current time on the panel clock; heartbeat, probe and job timestamps are written with it.
+  panelNow() {
+    return Date.now() + this.clockOffset;
+  }
 
   async session(signal?: AbortSignal) {
     const data = await this.request<ApiSession>("/api/v1/session", {
@@ -257,13 +264,12 @@ export class PortolanApi {
   }
 
   async servers(signal?: AbortSignal) {
-    return (
-      (
-        await this.request<{ items: ApiServer[] }>("/api/v1/servers", {
-          signal,
-        })
-      ).items ?? []
-    );
+    const data = await this.request<{ items: ApiServer[]; server_time?: string }>("/api/v1/servers", {
+      signal,
+    });
+    const serverTime = Date.parse(data.server_time ?? "");
+    if (Number.isFinite(serverTime)) this.clockOffset = serverTime - Date.now();
+    return data.items ?? [];
   }
 
   async nodes(signal?: AbortSignal) {

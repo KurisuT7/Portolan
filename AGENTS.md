@@ -52,3 +52,11 @@ and tests over prose; when they disagree, fix the prose in the same change.
   job exercises a real systemd install, upgrade, and container run.
 - Documentation-only edits need content, link, and diff review, not builds.
 - Before handoff, run `git diff --check` and review the complete diff.
+
+## Commit and release
+
+- Commit ordinary fixes and small features directly to `main`; CI runs on every push to `main`.
+- Use a `feat/…` or `fix/…` branch and pull request for installer, configuration apply and rollback,
+  or protocol and config-generation changes, Linux-only behavior that needs CI before landing, and
+  multi-commit work in progress.
+- Releases are published only by `v*` tags. Tag a release only after CI on that `main` commit passes.
