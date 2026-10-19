@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/KurisuT7/Portolan/internal/agentproto"
 	"github.com/KurisuT7/Portolan/internal/model"
@@ -15,6 +16,7 @@ import (
 
 func TestMain(m *testing.M) {
 	settleDelay = 0
+	listenTimeout, listenPoll = 0, 0
 	os.Exit(m.Run())
 }
 
@@ -167,6 +169,38 @@ func TestActivationRequiresOwnedListeners(t *testing.T) {
 	err := activateServices(context.Background(), o, plan, listeners)
 	if err == nil || !strings.Contains(err.Error(), "is not listening on udp port 20001") {
 		t.Fatalf("missing UDP socket accepted: %v", err)
+	}
+}
+
+func TestActivationWaitsForSlowListeners(t *testing.T) {
+	tcp := "   0: 00000000000000000000000000000000:4E21 00000000000000000000000000000000:0000 0A 00000000:00000000 00:00000000 00000000   998        0 1001 1 0000000000000000 100 0 0 10 0"
+	unit := "portolan-sing-box.service"
+	listeners := map[string][]listener{unit: {{"tcp", 20001}}}
+	listenTimeout = time.Minute
+	t.Cleanup(func() { listenTimeout = 0 })
+
+	o, _ := recordedOptions(t)
+	o.ProcRoot = procFixture(t, []string{"1001"}, map[string][]string{"tcp6": {}})
+	shows := 0
+	o.RunCommand = func(_ context.Context, _ string, args ...string) (string, error) {
+		if args[0] != "show" {
+			return "", nil
+		}
+		// The core binds its port only after a few status checks.
+		if shows++; shows == 3 {
+			table := filepath.Join(o.ProcRoot, "net", "tcp6")
+			data, _ := os.ReadFile(table)
+			if err := os.WriteFile(table, append(data, []byte(tcp+"\n")...), 0o600); err != nil {
+				return "", err
+			}
+		}
+		return runningUnit, nil
+	}
+	if err := activateServices(context.Background(), o, []serviceChange{{unit, false, true}}, listeners); err != nil {
+		t.Fatalf("slow listener rejected: %v", err)
+	}
+	if shows < 3 {
+		t.Fatalf("listener checked %d times", shows)
 	}
 }
 

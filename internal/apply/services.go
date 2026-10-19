@@ -22,10 +22,17 @@ import (
 // reports them started: Type=simple units count as active once forked.
 var settleDelay = 2 * time.Second
 
+// listenTimeout bounds how long started services may take to own their
+// sockets; listenPoll is the interval between checks.
+var (
+	listenTimeout = time.Minute
+	listenPoll    = 500 * time.Millisecond
+)
+
 // rollbackTimeout bounds restoring the previous release or core after a failed
-// activation. Each start runs `sing-box check` first, which takes tens of
-// seconds on a small single-core host.
-const rollbackTimeout = 2 * time.Minute
+// activation. On a small, oversubscribed host each start runs `sing-box check`
+// for over a minute before the core still has to bind its ports.
+const rollbackTimeout = 5 * time.Minute
 
 // serviceChange describes a configuration change, not every service in a
 // desired-state snapshot. Unchanged services keep their existing connections.
@@ -210,6 +217,8 @@ func startUnit(ctx context.Context, options Options, unit string) (startedUnit, 
 
 // verifyStarted waits for started units to settle, then requires each one to
 // still run the main process it started with and to own its expected sockets.
+// A core may need a while to bind its ports after systemd reports it started;
+// the main process must keep running throughout.
 func verifyStarted(ctx context.Context, options Options, units []startedUnit, listeners map[string][]listener) error {
 	if len(units) == 0 {
 		return nil
@@ -221,38 +230,61 @@ func verifyStarted(ctx context.Context, options Options, units []startedUnit, li
 		return ctx.Err()
 	case <-timer.C:
 	}
+	deadline := time.Now().Add(listenTimeout)
 	var failures []error
 	for _, started := range units {
-		failures = append(failures, verifyUnit(ctx, options, started, listeners[started.unit]))
+		failures = append(failures, verifyUnit(ctx, options, started, listeners[started.unit], deadline))
 	}
 	return errors.Join(failures...)
 }
 
-func verifyUnit(ctx context.Context, options Options, started startedUnit, expected []listener) error {
-	state, err := showUnit(ctx, options, started.unit)
-	if err != nil {
-		return err
-	}
-	if state.active != "active" || state.sub != "running" || state.pid == 0 || state.pid != started.pid {
-		return fmt.Errorf("%s did not stay running: %s/%s", started.unit, state.active, state.sub)
-	}
-	if len(expected) == 0 {
-		return nil
-	}
-	owned, err := socketInodes(options.ProcRoot, state.pid)
-	if err != nil {
-		return fmt.Errorf("%s: %w", started.unit, err)
-	}
-	for _, want := range expected {
-		bound, err := ownsSocket(options.ProcRoot, want, owned)
+func verifyUnit(ctx context.Context, options Options, started startedUnit, expected []listener, deadline time.Time) error {
+	for {
+		state, err := showUnit(ctx, options, started.unit)
 		if err != nil {
 			return err
 		}
-		if !bound {
-			return fmt.Errorf("%s is not listening on %s port %d", started.unit, want.Network, want.Port)
+		if state.active != "active" || state.sub != "running" || state.pid == 0 || state.pid != started.pid {
+			return fmt.Errorf("%s did not stay running: %s/%s", started.unit, state.active, state.sub)
+		}
+		missing, err := missingListener(options.ProcRoot, state.pid, expected)
+		if err != nil {
+			return fmt.Errorf("%s: %w", started.unit, err)
+		}
+		if missing == nil {
+			return nil
+		}
+		notListening := fmt.Errorf("%s is not listening on %s port %d", started.unit, missing.Network, missing.Port)
+		if !time.Now().Before(deadline) {
+			return notListening
+		}
+		select {
+		case <-ctx.Done():
+			return notListening
+		case <-time.After(listenPoll):
 		}
 	}
-	return nil
+}
+
+// missingListener returns the first expected socket the process does not own.
+func missingListener(procRoot string, pid int, expected []listener) (*listener, error) {
+	if len(expected) == 0 {
+		return nil, nil
+	}
+	owned, err := socketInodes(procRoot, pid)
+	if err != nil {
+		return nil, err
+	}
+	for index, want := range expected {
+		bound, err := ownsSocket(procRoot, want, owned)
+		if err != nil {
+			return nil, err
+		}
+		if !bound {
+			return &expected[index], nil
+		}
+	}
+	return nil, nil
 }
 
 func showUnit(ctx context.Context, options Options, unit string) (unitStatus, error) {
