@@ -6,6 +6,20 @@
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-19
+
+### 修复
+
+- 在线更新 sing-box 或 Realm 后，新核心的权限是 `0750 root:root`，以 `portolan` 用户运行的服务无法执行，
+  重启失败并换回原版本；没有运行托管服务的服务器显示更新成功，但之后添加节点或转发时会启动失败。
+  Agent 现在按 `0755` 安装核心，并在启动时修正已经装错权限的核心。
+- 「核心版本」里显示更新失败的服务器和失败原因；核心和 Agent 更新失败也列入总览的「需要处理」。
+- 浏览器时钟比面板慢几秒时，在线的服务器会短暂显示为离线。控制台现在按面板的时钟判断心跳是否新鲜。
+
+### 升级说明
+
+- 用旧版 Agent 更新过核心的服务器，先更新 Agent，再对失败的服务器重试核心更新。
+
 ## [0.3.0] - 2026-10-09
 
 ### 新增
@@ -83,7 +97,8 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.0
 [0.2.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.2.1
 [0.2.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.2.0
