@@ -22,6 +22,11 @@ import (
 // reports them started: Type=simple units count as active once forked.
 var settleDelay = 2 * time.Second
 
+// rollbackTimeout bounds restoring the previous release or core after a failed
+// activation. Each start runs `sing-box check` first, which takes tens of
+// seconds on a small single-core host.
+const rollbackTimeout = 2 * time.Minute
+
 // serviceChange describes a configuration change, not every service in a
 // desired-state snapshot. Unchanged services keep their existing connections.
 type serviceChange struct {

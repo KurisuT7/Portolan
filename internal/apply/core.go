@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/KurisuT7/Portolan/internal/cores"
 	"github.com/KurisuT7/Portolan/internal/model"
@@ -77,7 +76,7 @@ func UpdateCore(ctx context.Context, core model.Core, archive string, options Op
 	}
 	if err := restartUnits(ctx, options, units, listeners); err != nil {
 		// A cancelled update still needs a bounded opportunity to restore service.
-		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+		rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 		defer cancel()
 		failure := fmt.Errorf("%w: %w", ErrCoreRestart, err)
 		if restoreErr := os.Rename(previous, binary); restoreErr != nil {

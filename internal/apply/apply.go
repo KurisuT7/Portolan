@@ -95,7 +95,7 @@ func Apply(ctx context.Context, payload agentproto.SyncPayload, options Options)
 	if !options.SkipServiceActions {
 		if err := activateServices(ctx, options, plan, expectedListeners(options, payload)); err != nil {
 			// A cancelled apply still needs a bounded opportunity to restore service.
-			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			rollbackCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), rollbackTimeout)
 			defer cancel()
 			rollbackErr := rollback(rollbackCtx, options, previousTarget, plan)
 			return Result{}, errors.Join(fmt.Errorf("activate generated configuration: %w", err), rollbackErr)
