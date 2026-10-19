@@ -245,6 +245,9 @@ func LoadConfig(path string) (Config, error) {
 }
 
 func (c *Client) Run(ctx context.Context, once bool) error {
+	if err := applyconfig.RepairCoreModes(c.applyOptions()); err != nil {
+		slog.Warn("making the cores executable for their services failed", "error", err)
+	}
 	if once {
 		return c.runOnce(ctx)
 	}

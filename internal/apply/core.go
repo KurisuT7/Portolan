@@ -92,6 +92,30 @@ func UpdateCore(ctx context.Context, core model.Core, archive string, options Op
 	return nil
 }
 
+// RepairCoreModes makes the installed cores executable for the service user
+// again. Agents up to 0.3.0 installed core updates under their umask 0027,
+// which left the new core mode 0750 root:root.
+func RepairCoreModes(options Options) error {
+	if err := defaultsAndValidate(&options); err != nil {
+		return err
+	}
+	var failures []error
+	for _, binary := range []string{options.SingBoxBinary, options.RealmBinary} {
+		info, err := os.Stat(binary)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			failures = append(failures, err)
+			continue
+		}
+		if info.Mode().IsRegular() && info.Mode().Perm()&0o005 != 0o005 {
+			failures = append(failures, os.Chmod(binary, 0o755))
+		}
+	}
+	return errors.Join(failures...)
+}
+
 // coreUnits lists the services of a release that run the core.
 func coreUnits(options Options, release string, core model.Core) ([]string, map[string][]listener, error) {
 	if release == "" {

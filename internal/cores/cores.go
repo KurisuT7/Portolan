@@ -263,7 +263,8 @@ func (c *Client) getJSON(ctx context.Context, path string, target any) error {
 }
 
 // ExtractBinary writes the core executable from a release archive to
-// destination with mode 0755.
+// destination with mode 0755. The mode is set explicitly because the Agent's
+// umask would otherwise leave the core unexecutable for the service user.
 func ExtractBinary(archive string, core model.Core, destination string) error {
 	return readBinary(archive, specs[core].binary, func(r io.Reader) error {
 		file, err := os.OpenFile(destination, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o755)
@@ -274,7 +275,10 @@ func ExtractBinary(archive string, core model.Core, destination string) error {
 			file.Close()
 			return err
 		}
-		return file.Close()
+		if err := file.Close(); err != nil {
+			return err
+		}
+		return os.Chmod(destination, 0o755)
 	})
 }
 
