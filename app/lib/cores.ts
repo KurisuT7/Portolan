@@ -48,7 +48,8 @@ export function serverCoreState(server: ApiServer, core: CoreName, cores: ApiCor
 }
 
 export function coreSummary(servers: ApiServer[], core: CoreName, cores: ApiCores) {
-  const states = servers.filter((server) => server.agent_status !== "pending").map((server) => serverCoreState(server, core, cores));
-  const count = (...kinds: CoreState["kind"][]) => states.filter((state) => kinds.includes(state.kind)).length;
-  return { total: states.length, current: count("current"), outdated: count("outdated", "failed"), updating: count("updating"), unreported: count("unreported") };
+  const rows = servers.filter((server) => server.agent_status !== "pending").map((server) => ({ server, state: serverCoreState(server, core, cores) }));
+  const count = (...kinds: CoreState["kind"][]) => rows.filter(({ state }) => kinds.includes(state.kind)).length;
+  const failed = rows.flatMap(({ server, state }) => state.kind === "failed" ? [{ id: server.id, name: server.name, detail: state.detail }] : []);
+  return { total: rows.length, current: count("current"), outdated: count("outdated", "failed"), updating: count("updating"), unreported: count("unreported"), failed };
 }

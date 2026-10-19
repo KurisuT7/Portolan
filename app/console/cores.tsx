@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ArrowUpCircle, RefreshCw } from "lucide-react";
 import type { ApiCoreRelease, ApiServer, CoreName } from "../lib/api";
 import { coreLabels, coreNames, coreSummary, coreTarget, serverCoreState } from "../lib/cores";
+import { routeHref } from "../lib/routing";
 import { api, errorText, useFleet } from "./data";
 import { Dialog, ErrorText, Spinner, Status, toast, type Tone } from "./ui";
 
@@ -92,6 +93,7 @@ function CoreTargetRow({ core }: { core: CoreName }) {
           <span className="sub">
             {summary.current}/{summary.total} 台已是 {target}
             {summary.updating > 0 && ` · ${summary.updating} 台更新中`}
+            {summary.failed.length > 0 && ` · ${summary.failed.length} 台失败`}
             {summary.unreported > 0 && ` · ${summary.unreported} 台尚未上报`}
           </span>
           {confirming ? (
@@ -107,6 +109,16 @@ function CoreTargetRow({ core }: { core: CoreName }) {
             </button>
           )}
         </div>
+      )}
+      {target && summary.failed.length > 0 && (
+        <ul className="core-failures">
+          {summary.failed.map((item) => (
+            <li key={item.id}>
+              <a className="text-link" href={routeHref({ page: "server", id: item.id })}>{item.name}</a>
+              <span className="core-error">{item.detail}</span>
+            </li>
+          ))}
+        </ul>
       )}
       <ErrorText>{error}</ErrorText>
     </section>

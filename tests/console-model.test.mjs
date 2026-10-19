@@ -11,6 +11,7 @@ import { agentUpdateState, agentUpdateSummary, olderRelease } from "../app/lib/a
 const now = Date.parse("2026-10-05T12:00:00Z");
 const fresh = "2026-10-05T11:59:30Z";
 const noTraffic = { since: "", items: [] };
+const noCores = { targets: [], jobs: [] };
 
 test("routes round-trip and accept legacy hashes", () => {
   for (const route of [
@@ -75,7 +76,7 @@ test("fleet index resolves targets and surfaces only actionable problems", () =>
     { id: "j2", server_id: "a", type: "sync", state: "failed", result: JSON.stringify({ message: "核心配置校验失败，未切换到新配置。" }), created_at: fresh },
     { id: "j1", server_id: "a", type: "sync", state: "succeeded", created_at: "2026-10-05T10:00:00Z" },
   ];
-  const fleet = { servers, nodes, forwards, probes, config, traffic: noTraffic };
+  const fleet = { servers, nodes, forwards, probes, config, cores: noCores, traffic: noTraffic };
   const index = buildIndex(fleet);
   assert.equal(index.config.get("a").id, "j2");
   assert.deepEqual(index.forwardsByIngress.get("a").map((item) => item.id), ["f1", "f2"]);
@@ -102,7 +103,7 @@ test("route ordering puts problems first and summary counts only measured routes
   const forward = (id, extra = {}) => ({ id, ingress_server_id: "a", name: id, listen_port: 1, networks: ["tcp"], target_host: "x", target_port: 1, engine: "sing-box", enabled: true, ...extra });
   const forwards = [forward("ok"), forward("off", { enabled: false }), forward("udp", { networks: ["udp"] }), forward("down"), forward("slow")];
   const fleet = { servers: [{ id: "a", name: "a", address: "", agent_status: "online", last_seen_at: fresh, egress_ipv4: true, egress_ipv6: false }], nodes: [], forwards,
-    probes: [probe("ok", "stable"), probe("down", "down"), probe("slow", "degraded")], config: [], traffic: noTraffic };
+    probes: [probe("ok", "stable"), probe("down", "down"), probe("slow", "degraded")], config: [], cores: noCores, traffic: noTraffic };
   const index = buildIndex(fleet);
   assert.deepEqual(sortRoutes(forwards, index, now).map((item) => item.id), ["down", "slow", "ok", "udp", "off"]);
   assert.deepEqual(fleetSummary(fleet, index, now), { servers: 1, online: 1, measured: 3, healthy: 1 });
@@ -136,7 +137,7 @@ test("service state is claimed only from a fresh Agent report", () => {
   assert.equal(realmForwardId("portolan-realm@f2.service"), "f2");
 
   const forwards = [{ id: "f2", ingress_server_id: "a", name: "到地址", listen_port: 1001, networks: ["tcp"], target_host: "2001:db8::1", target_port: 80, engine: "realm", enabled: true }];
-  const fleet = { servers: [server], nodes: [], forwards, probes: [], config: [], traffic: noTraffic };
+  const fleet = { servers: [server], nodes: [], forwards, probes: [], config: [], cores: noCores, traffic: noTraffic };
   const items = attentionItems(fleet, buildIndex(fleet), {}, now);
   assert.deepEqual(items.map((item) => [item.key, item.detail]), [["unit:a:portolan-realm@f2.service", "转发「到地址」未运行 · 反复重启"]]);
   assert.deepEqual(stoppedUnits({ ...server, last_seen_at: "2026-10-05T11:00:00Z" }, now), []);
@@ -148,7 +149,7 @@ test("a route whose forwarding process is down is not healthy", () => {
   const forward = (id) => ({ id, ingress_server_id: "a", name: id, listen_port: 1, networks: ["tcp"], target_host: "x", target_port: 1, engine: "realm", enabled: true });
   const probe = (id) => ({ forward_id: id, server_id: "a", checked_at: fresh, attempts: 3, successes: 3, latency_ms: 20, jitter_ms: 1, loss_percent: 0, status: "stable" });
   const forwards = [forward("up"), forward("down")];
-  const fleet = { servers: [server], nodes: [], forwards, probes: [probe("up"), probe("down")], config: [], traffic: noTraffic };
+  const fleet = { servers: [server], nodes: [], forwards, probes: [probe("up"), probe("down")], config: [], cores: noCores, traffic: noTraffic };
   const index = buildIndex(fleet);
   const down = routeState(forwards[1], index, false, now);
   assert.deepEqual([down.stopped, down.tone, down.engineDetail, down.probe.tone], [true, "bad", "启动失败", "good"]);
@@ -175,9 +176,34 @@ test("core state follows the target, update jobs and Agent reports", () => {
   assert.equal(serverCoreState(server, "sing-box", cores([job("failed", "2026-10-05T10:00:00Z")])).kind, "outdated");
   assert.equal(serverCoreState(server, "realm", cores([], [{ core: "realm", version: "2.9.6", updated_at: fresh }])).kind, "current");
   assert.deepEqual(coreSummary([server, unreported, { ...server, id: "c", agent_status: "pending" }], "sing-box", cores()),
-    { total: 2, current: 0, outdated: 1, updating: 0, unreported: 1 });
+    { total: 2, current: 0, outdated: 1, updating: 0, unreported: 1, failed: [] });
+  assert.deepEqual(coreSummary([server], "sing-box", cores([job("failed", fresh, JSON.stringify({ message: "新核心没有正常运行，已换回原版本。" }))])).failed,
+    [{ id: "a", name: "入口", detail: "新核心没有正常运行，已换回原版本。" }]);
   assert.equal(coresReady(cores()), false);
   assert.equal(coresReady(cores([], [target, { core: "realm", version: "2.9.6", updated_at: fresh }])), true);
+});
+
+test("failed core and Agent updates need attention until they are retried", () => {
+  const runtime = { sing_box_version: "1.14.2", realm_version: "2.9.6", agent_version: "v0.2.0", reported_at: fresh, units: [] };
+  const server = (id) => ({ id, name: id, address: "203.0.113.1", agent_status: "online", last_seen_at: fresh, egress_ipv4: true, egress_ipv6: false, runtime });
+  const failed = (server_id, type, message) => ({ id: `${server_id}-${type}`, server_id, type, state: "failed", result: JSON.stringify({ message }), created_at: fresh });
+  const cores = {
+    targets: [{ core: "sing-box", version: "1.14.3", updated_at: "2026-10-05T11:00:00Z" }],
+    jobs: [
+      failed("a", "update-sing-box", "新核心没有正常运行，已换回原版本。"),
+      failed("b", "update-sing-box", "新核心没有正常运行，换回原版本时也出错，请立即检查服务器。"),
+      failed("a", "update-agent", "新版本 Agent 下载或校验失败，未替换。"),
+      { id: "c", server_id: "c", type: "update-sing-box", state: "pending", created_at: fresh },
+    ],
+  };
+  const fleet = { servers: [server("a"), server("b"), server("c")], nodes: [], forwards: [], probes: [], config: [], cores, traffic: noTraffic };
+  const items = attentionItems(fleet, buildIndex(fleet), {}, now, "v0.3.1");
+  assert.deepEqual(items.map((item) => [item.key, item.tone, item.detail]), [
+    ["core:a:sing-box", "warn", "sing-box 更新到 1.14.3 失败 · 新核心没有正常运行，已换回原版本"],
+    ["agent-update:a", "warn", "Agent 更新到 v0.3.1 失败 · 新版本 Agent 下载或校验失败，未替换"],
+    ["core:b:sing-box", "bad", "sing-box 更新到 1.14.3 失败 · 新核心没有正常运行，换回原版本时也出错，请立即检查服务器"],
+  ]);
+  assert.deepEqual(attentionItems(fleet, buildIndex(fleet), { cores: "x" }, now, "v0.3.1"), []);
 });
 
 test("releases compare numerically and development builds never count as older", () => {

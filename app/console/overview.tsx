@@ -10,9 +10,9 @@ import { ServerGrid } from "./servers";
 import { Empty, Status } from "./ui";
 
 export function OverviewPage() {
-  const { data, errors, index, now } = useFleet();
+  const { agentVersion, data, errors, index, now } = useFleet();
   const summary = fleetSummary(data, index, now);
-  const attention = attentionItems(data, index, errors, now);
+  const attention = attentionItems(data, index, errors, now, agentVersion);
   const problems = attention.filter((item) => item.tone !== "neutral").length;
   const unavailable = !!(errors.servers || errors.forwards || errors.probes);
   const tone = unavailable ? "neutral" : problems ? (attention.some((item) => item.tone === "bad") ? "bad" : "warn") : "good";

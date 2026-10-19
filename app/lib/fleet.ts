@@ -1,4 +1,6 @@
 import type { ApiCores, ApiForward, ApiForwardProbe, ApiJob, ApiNode, ApiServer, ApiTraffic } from "./api";
+import { agentUpdateState } from "./agent.ts";
+import { coreLabels, coreNames, serverCoreState } from "./cores.ts";
 import { formatEndpoint } from "./endpoints.ts";
 import { relativeTime } from "./format.ts";
 import { protocolLabels } from "./nodes.ts";
@@ -72,7 +74,10 @@ export function targetsServer(forward: ApiForward, serverId: string, index: Flee
 
 export type Attention = { key: string; tone: StatusTone; title: string; detail: string; route: Route };
 
-export function attentionItems(fleet: Fleet, index: FleetIndex, unavailable: Partial<Record<keyof Fleet, unknown>>, now: number) {
+const sentence = (text: string) => text.replace(/。$/, "");
+
+// agentVersion is the Agent release the panel serves.
+export function attentionItems(fleet: Fleet, index: FleetIndex, unavailable: Partial<Record<keyof Fleet, unknown>>, now: number, agentVersion = "") {
   const items: Attention[] = [];
   if (!unavailable.servers) {
     for (const server of fleet.servers) {
@@ -84,6 +89,17 @@ export function attentionItems(fleet: Fleet, index: FleetIndex, unavailable: Par
         const forwardId = realmForwardId(unit.name);
         const name = forwardId ? `转发「${index.forwards.get(forwardId)?.name ?? forwardId}」` : "sing-box ";
         items.push({ key: `unit:${server.id}:${unit.name}`, tone: "bad", title: server.name, detail: `${name}未运行 · ${unitDetail(unit)}`, route });
+      }
+      if (!unavailable.cores) {
+        for (const core of coreNames) {
+          const state = serverCoreState(server, core, fleet.cores);
+          if (state.kind !== "failed") continue;
+          // A failed rollback may leave the core stopped; otherwise the previous version still runs.
+          const tone = state.detail.includes("换回原版本时也出错") ? "bad" : "warn";
+          items.push({ key: `core:${server.id}:${core}`, tone, title: server.name, detail: `${coreLabels[core]} 更新到 ${state.target} 失败 · ${sentence(state.detail)}`, route });
+        }
+        const agent = agentUpdateState(server, agentVersion, fleet.cores.jobs);
+        if (agent.kind === "failed") items.push({ key: `agent-update:${server.id}`, tone: "warn", title: server.name, detail: `Agent 更新到 ${agent.target} 失败 · ${sentence(agent.detail)}`, route });
       }
       if (unavailable.config) continue;
       const config = configurationState(index.config.get(server.id), false, now);
