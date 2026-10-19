@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -101,11 +102,13 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) {
 		s.writeStoreError(w, err)
 		return
 	}
+	// Ports of a NAT server are allocated and checked within its mappings.
+	port, _ := server.PublicPort(server.Address, created.ListenPort)
 	if strings.TrimSpace(server.Address) == "" {
 		writeJSON(w, http.StatusCreated, map[string]any{"id": created.ID, "client": configgen.ClientExport{}, "export_pending": true})
 		return
 	}
-	client, err := configgen.ExportClient(created, configgen.PublishedEndpoint{Address: server.Address, Port: created.ListenPort, Name: created.Name})
+	client, err := configgen.ExportClient(created, configgen.PublishedEndpoint{Address: server.Address, Port: port, Name: created.Name})
 	if err != nil {
 		s.internalError(w, err)
 		return
@@ -137,14 +140,18 @@ func (s *Server) exportNode(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusConflict, "server address is still waiting for Agent auto-detection")
 		return
 	}
-	port := node.ListenPort
+	port, mapped := server.PublicPort(address, node.ListenPort)
 	if rawPort := r.URL.Query().Get("port"); rawPort != "" {
 		parsed, err := strconv.ParseUint(rawPort, 10, 16)
 		if err != nil || parsed == 0 {
 			writeError(w, http.StatusBadRequest, "invalid published port")
 			return
 		}
-		port = uint16(parsed)
+		port, mapped = uint16(parsed), true
+	}
+	if !mapped {
+		writeError(w, http.StatusConflict, fmt.Sprintf("端口 %d 不在 %s 的端口映射内，无法经公网 IPv4 连接", node.ListenPort, server.Name))
+		return
 	}
 	name := valueOr(r.URL.Query().Get("name"), node.Name)
 	client, err := configgen.ExportClient(node, configgen.PublishedEndpoint{Address: address, Port: port, Name: name})

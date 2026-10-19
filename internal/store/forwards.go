@@ -113,20 +113,24 @@ func (s *Store) getForwardFrom(ctx context.Context, db queryer, id string) (mode
 
 // Resolve targets and reserve ports under the mutation transaction. A target
 // node may be external; selecting it does not grant ownership of its service.
+// A server or node target names a host port on the target server, and the
+// ingress dials the port that reaches it through the target's NAT mappings.
 func (s *Store) prepareForward(ctx context.Context, tx *sql.Tx, forward *model.Forward, excludingID string) error {
 	ingress, err := s.getServerFrom(ctx, tx, forward.IngressServerID)
 	if err != nil {
 		return err
 	}
+	servicePort := forward.ServicePort()
 	if forward.TargetNodeID != "" {
 		if err := tx.QueryRowContext(ctx, `SELECT server_id,listen_port FROM nodes WHERE id=?`, forward.TargetNodeID).
-			Scan(&forward.TargetServerID, &forward.TargetPort); err != nil {
+			Scan(&forward.TargetServerID, &servicePort); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return ErrNotFound
 			}
 			return err
 		}
 	}
+	forward.TargetServerPort = 0
 	if forward.TargetServerID != "" {
 		target, err := s.getServerFrom(ctx, tx, forward.TargetServerID)
 		if err != nil {
@@ -136,14 +140,21 @@ func (s *Store) prepareForward(ctx context.Context, tx *sql.Tx, forward *model.F
 		if forward.TargetHost == "" {
 			return fmt.Errorf("%w: 目标服务器尚未识别到可用地址", ErrConflict)
 		}
+		targetPort, mapped := target.PublicPort(forward.TargetHost, servicePort)
+		if !mapped && servicePort != 0 {
+			return fmt.Errorf("%w: 目标端口 %d 不在 %s 的端口映射内（%s）", ErrInvalidInput, servicePort, target.Name, target.HostPortRanges())
+		}
+		forward.TargetPort, forward.TargetServerPort = targetPort, servicePort
 	}
 	forward.TargetHost = model.NormalizeHost(forward.TargetHost)
 	if forward.ListenPort == 0 {
-		port, err := availablePortFrom(ctx, tx, forward.IngressServerID, excludingID)
+		port, err := availablePortFrom(ctx, tx, ingress, excludingID)
 		if err != nil {
 			return err
 		}
 		forward.ListenPort = port
+	} else if !ingress.MapsHostPort(forward.ListenPort) {
+		return fmt.Errorf("%w: 入口端口 %d 不在 %s 的端口映射内（%s）", ErrInvalidInput, forward.ListenPort, ingress.Name, ingress.HostPortRanges())
 	}
 	if err := forward.Validate(); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidInput, err)
@@ -161,16 +172,15 @@ func (s *Store) prepareForward(ctx context.Context, tx *sql.Tx, forward *model.F
 	return nil
 }
 
-// AvailablePort only considers the control-plane inventory. Real service
+// availablePortFrom only considers the control-plane inventory. Real service
 // activation remains authoritative for conflicts with independently owned apps.
-func (s *Store) AvailablePort(ctx context.Context, serverID string) (uint16, error) {
-	if _, err := s.GetServer(ctx, serverID); err != nil {
-		return 0, err
+// A NAT server gets the first free host port in its mappings; other servers a
+// random high port.
+func availablePortFrom(ctx context.Context, db queryer, server model.Server, excludingID string) (uint16, error) {
+	if server.NAT() {
+		return firstMappedPort(ctx, db, server, excludingID)
 	}
-	return availablePortFrom(ctx, s.db, serverID, "")
-}
-
-func availablePortFrom(ctx context.Context, db queryer, serverID, excludingID string) (uint16, error) {
+	serverID := server.ID
 	for attempt := 0; attempt < 256; attempt++ {
 		buffer := make([]byte, 2)
 		if _, err := rand.Read(buffer); err != nil {
@@ -190,6 +200,34 @@ func availablePortFrom(ctx context.Context, db queryer, serverID, excludingID st
 		}
 	}
 	return 0, errors.New("could not allocate an unused high port")
+}
+
+func firstMappedPort(ctx context.Context, db queryer, server model.Server, excludingID string) (uint16, error) {
+	rows, err := db.QueryContext(ctx, `SELECT listen_port FROM nodes WHERE server_id=?
+		UNION SELECT listen_port FROM forwards WHERE ingress_server_id=? AND id<>?`, server.ID, server.ID, excludingID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	used := map[uint16]bool{}
+	for rows.Next() {
+		var port uint16
+		if err := rows.Scan(&port); err != nil {
+			return 0, err
+		}
+		used[port] = true
+	}
+	if err := rows.Err(); err != nil {
+		return 0, err
+	}
+	for _, mapping := range server.NATPorts {
+		for offset := range mapping.Count {
+			if port := mapping.Host + offset; !used[port] {
+				return port, nil
+			}
+		}
+	}
+	return 0, fmt.Errorf("%w: %s 端口映射内的端口（%s）都已被占用", ErrConflict, server.Name, server.HostPortRanges())
 }
 
 func (s *Store) ListForwards(ctx context.Context) ([]model.Forward, error) {

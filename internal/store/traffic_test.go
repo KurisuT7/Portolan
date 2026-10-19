@@ -321,7 +321,7 @@ func TestTrafficFollowsEachServersCycle(t *testing.T) {
 	if server, node := items["server:"+f.server], items["node:"+f.node]; server.RX != 4_000 || node.RX != 4_000 || !node.Since.Equal(time.Date(2026, 10, 1, 0, 0, 0, 0, zone)) {
 		t.Fatalf("calendar month summary = %#v", items)
 	}
-	if _, err := f.store.UpdateServer(ctx, f.server, "Edge", "203.0.113.20", "", 15); err != nil {
+	if _, err := f.store.UpdateServer(ctx, f.server, "Edge", "203.0.113.20", "", 15, nil); err != nil {
 		t.Fatal(err)
 	}
 	items = f.summary(t, now)
@@ -336,7 +336,7 @@ func TestTrafficFollowsEachServersCycle(t *testing.T) {
 	if last.RX != 6_000 || !last.Start.Equal(time.Date(2026, 9, 15, 0, 0, 0, 0, zone)) || !last.End.Equal(time.Date(2026, 10, 15, 0, 0, 0, 0, zone)) || previous.RX != 1_000 {
 		t.Fatalf("cycles = %#v", points)
 	}
-	if _, err := f.store.UpdateServer(ctx, f.server, "Edge", "203.0.113.20", "", 32); !errors.Is(err, ErrInvalidInput) {
+	if _, err := f.store.UpdateServer(ctx, f.server, "Edge", "203.0.113.20", "", 32, nil); !errors.Is(err, ErrInvalidInput) {
 		t.Fatalf("reset day 32 accepted: %v", err)
 	}
 }

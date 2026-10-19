@@ -105,12 +105,15 @@ func (s *Server) updateServer(w http.ResponseWriter, r *http.Request) {
 		Region  string `json:"region"`
 		// Zero or absent keeps the current day.
 		TrafficResetDay int `json:"traffic_reset_day"`
+		// Absent keeps the current mappings; an empty list removes them.
+		NATPorts *[]model.PortMapping `json:"nat_ports"`
 	}
 	if err := decodeJSON(w, r, &request); err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	server, err := s.store.UpdateServer(r.Context(), r.PathValue("id"), request.Name, request.Address, request.Region, request.TrafficResetDay)
+	server, err := s.store.UpdateServer(r.Context(), r.PathValue("id"), request.Name, request.Address, request.Region,
+		request.TrafficResetDay, request.NATPorts)
 	if err != nil {
 		s.writeStoreError(w, err)
 		return

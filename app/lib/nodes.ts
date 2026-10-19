@@ -54,13 +54,14 @@ export function displayNodeProfile(
   return detail;
 }
 
-export function formatNodeOption(node: ApiNode) {
+// port is the one clients dial, which differs from listen_port behind NAT.
+export function formatNodeOption(node: ApiNode, port = node.listen_port) {
   const management = node.managed ? "托管" : "外部";
   return [
     management,
     node.name,
     protocolLabels[node.protocol],
-    `:${node.listen_port}`,
+    `:${port}`,
   ].join(" · ");
 }
 

@@ -95,6 +95,10 @@ readlink -f /etc/portolan/runtime/current
 }
 ```
 
+`server` 还可以包含 `nat_ports`，即 NAT 服务器的端口映射，例如
+`[{"public": 30001, "host": 10001, "count": 20}]`。指向这台服务器的转发按映射校验目标端口，并换算回
+目标服务器上的本机端口。
+
 清单中的每个 node/forward 必须与配置文件一一对应；多出或缺少条目都会失败。
 
 ## 生成新数据库

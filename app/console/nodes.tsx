@@ -3,9 +3,10 @@
 import { Fragment, useState, type FormEvent, type ReactNode } from "react";
 import { Check, Link2, Plus, Trash2 } from "lucide-react";
 import { ApiError, type ApiForward, type ApiNode, type ClientExport } from "../lib/api";
-import { serverHost } from "../lib/endpoints";
+import { displayPort, publicPort, serverHost } from "../lib/endpoints";
 import { regionParts } from "../lib/fleet";
 import { byteLength } from "../lib/format";
+import { natPortHint } from "../lib/nat";
 import { displayNodeProfile, groupNodesByServer, protocolLabels } from "../lib/nodes";
 import { routeHref } from "../lib/routing";
 import { configurationState, serverState, singBoxUnit, unitState } from "../lib/status";
@@ -30,7 +31,7 @@ const shadowsocksMethods = [
 const exportValue = (client: ClientExport) => client.uri || client.surge_line || "";
 
 export function NodesPage({ server }: { server?: string }) {
-  const { data, errors } = useFleet();
+  const { data, errors, index } = useFleet();
   const [query, setQuery] = useState("");
   const [protocol, setProtocol] = useState<Protocol | "all">("all");
   const [creating, setCreating] = useState(false);
@@ -38,7 +39,7 @@ export function NodesPage({ server }: { server?: string }) {
   const rows = data.nodes.filter((node) =>
     (!server || node.server_id === server)
     && (protocol === "all" || node.protocol === protocol)
-    && `${node.name} ${node.listen_port} ${node.profile}`.toLowerCase().includes(needle));
+    && `${node.name} ${node.listen_port} ${displayPort(index.servers.get(node.server_id), node.listen_port) ?? ""} ${node.profile}`.toLowerCase().includes(needle));
   const filtered = !!(needle || server || protocol !== "all");
   return (
     <>
@@ -78,7 +79,11 @@ export function useNodeLink() {
   const [copied, setCopied] = useCopied();
   const [fallback, setFallback] = useState<{ title: string; value: string } | null>(null);
   async function copyLink(node: ApiNode, forward?: ApiForward) {
-    const endpoint = forward ? { address: serverHost(index.servers.get(forward.ingress_server_id)), port: forward.listen_port, name: node.name } : undefined;
+    const ingress = forward ? index.servers.get(forward.ingress_server_id) : undefined;
+    const address = serverHost(ingress);
+    const port = forward ? publicPort(ingress, address, forward.listen_port) : null;
+    if (forward && port == null) return toast(`入口端口 ${forward.listen_port} 不在 NAT 端口映射内`, "bad");
+    const endpoint = forward && port != null ? { address, port, name: node.name } : undefined;
     const request = api.exportNode(node.id, endpoint).then(exportValue);
     try {
       await copyText(request);
@@ -135,9 +140,11 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
                   const server = trafficOf(index.traffic, "server", node.server_id);
                   const counted = !errors.traffic && portsCounted(server);
                   const traffic = trafficOf(index.traffic, "node", node.id);
+                  const port = displayPort(index.servers.get(node.server_id), node.listen_port);
                   return (
                     <div className="node-row" key={node.id}>
-                      <ProtocolTag protocol={node.protocol} port={node.listen_port} />
+                      <ProtocolTag protocol={node.protocol} port={port ?? node.listen_port}
+                        title={port != null && port !== node.listen_port ? `本机端口 ${node.listen_port}` : undefined} />
                       <div className="node-name">
                         <b>{node.name}</b>
                         <span className="sub">
@@ -145,6 +152,7 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
                           {!node.managed && <> · <span title={node.source}>Agent 发现 · 只读</span></>}
                         </span>
                         {core && !core.running && <Status tone="bad">sing-box 未运行 · {core.detail}</Status>}
+                        {port == null && <Status tone="warn">端口不在 NAT 映射内，无法经公网 IPv4 连接</Status>}
                       </div>
                       <span className="node-traffic" title={counted && traffic ? `${cycleWord(server)}接收 ${formatBytes(traffic.rx_bytes)} · 发送 ${formatBytes(traffic.tx_bytes)}` : undefined}>
                         {counted && `${cycleWord(server)} ${formatBytes(traffic ? totalBytes(traffic) : 0)}`}
@@ -306,7 +314,7 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
                   <input value={name} readOnly={locked} onChange={(event) => setName(event.target.value)} placeholder={server?.name || "节点名称"} />
                 </Field>
                 {selected.length === 1 && (
-                  <Field label="端口">
+                  <Field label="端口" hint={natPortHint(server, port)}>
                     <input type="number" min={1} max={65535} value={port} disabled={locked} onChange={(event) => setPort(event.target.value)} placeholder="自动分配" />
                   </Field>
                 )}

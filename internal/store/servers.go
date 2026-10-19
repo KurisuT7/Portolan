@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,7 +24,12 @@ func (s *Store) CreateServer(ctx context.Context, server model.Server) (created 
 	if server.TrafficResetDay == 0 {
 		server.TrafficResetDay = 1
 	}
+	model.SortPortMappings(server.NATPorts)
 	if err := server.Validate(); err != nil {
+		return model.Server{}, "", err
+	}
+	natPorts, err := json.Marshal(portMappings(server.NATPorts))
+	if err != nil {
 		return model.Server{}, "", err
 	}
 	token, err := randomToken(32)
@@ -32,10 +38,10 @@ func (s *Store) CreateServer(ctx context.Context, server model.Server) (created 
 	}
 	now := time.Now().UTC()
 	_, err = s.db.ExecContext(ctx, `INSERT INTO servers
-			(id,name,address,ipv4_address,ipv6_address,egress_ipv4,egress_ipv6,region,traffic_reset_day,
+			(id,name,address,ipv4_address,ipv6_address,egress_ipv4,egress_ipv6,region,nat_ports,traffic_reset_day,
 			 agent_status,enroll_token_hash,enroll_expires_at,created_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`, server.ID, server.Name, server.Address, server.IPv4Address,
-		server.IPv6Address, server.EgressIPv4, server.EgressIPv6, server.Region, server.TrafficResetDay, "pending",
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, server.ID, server.Name, server.Address, server.IPv4Address,
+		server.IPv6Address, server.EgressIPv4, server.EgressIPv6, server.Region, natPorts, server.TrafficResetDay, "pending",
 		tokenHash(token), now.Add(20*time.Minute).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.Server{}, "", err
@@ -109,8 +115,10 @@ func (s *Store) Enroll(ctx context.Context, enrollmentToken, observedAddress str
 }
 
 // UpdateServer changes a server's name, connection address, region and, when
-// trafficResetDay is not zero, the day its traffic cycle starts.
-func (s *Store) UpdateServer(ctx context.Context, serverID, name, address, region string, trafficResetDay int) (model.Server, error) {
+// trafficResetDay is not zero, the day its traffic cycle starts. A non-nil
+// natPorts replaces the NAT port mappings; an empty list removes them.
+func (s *Store) UpdateServer(ctx context.Context, serverID, name, address, region string, trafficResetDay int,
+	natPorts *[]model.PortMapping) (model.Server, error) {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return model.Server{}, err
@@ -136,16 +144,32 @@ func (s *Store) UpdateServer(ctx context.Context, serverID, name, address, regio
 	if trafficResetDay != 0 {
 		current.TrafficResetDay = trafficResetDay
 	}
+	natChanged := false
+	if natPorts != nil {
+		mappings := slices.Clone(*natPorts)
+		model.SortPortMappings(mappings)
+		natChanged = !slices.Equal(mappings, current.NATPorts)
+		current.NATPorts = mappings
+	}
 	if err := current.Validate(); err != nil {
 		return model.Server{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
-	if _, err := tx.ExecContext(ctx, `UPDATE servers SET name=?,address=?,region=?,traffic_reset_day=? WHERE id=?`,
-		current.Name, current.Address, current.Region, current.TrafficResetDay, serverID); err != nil {
+	if natChanged {
+		if err := requireMappedListeners(ctx, tx, current); err != nil {
+			return model.Server{}, err
+		}
+	}
+	encodedNATPorts, err := json.Marshal(portMappings(current.NATPorts))
+	if err != nil {
+		return model.Server{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE servers SET name=?,address=?,region=?,nat_ports=?,traffic_reset_day=? WHERE id=?`,
+		current.Name, current.Address, current.Region, encodedNATPorts, current.TrafficResetDay, serverID); err != nil {
 		return model.Server{}, err
 	}
 	var changed []string
-	if current.Address != previousAddress {
-		changed, err = s.rerouteForwardsTx(ctx, tx, serverID)
+	if current.Address != previousAddress || natChanged {
+		changed, err = s.rerouteForwardsTx(ctx, tx, serverID, true)
 		if err != nil {
 			return model.Server{}, err
 		}
@@ -213,7 +237,7 @@ func (s *Store) UpdateAgentNetwork(ctx context.Context, serverID string, update 
 		primaryAddress, ipv4Address, ipv6Address, egressIPv4, egressIPv6, serverID); err != nil {
 		return model.Server{}, err
 	}
-	changed, err := s.rerouteForwardsTx(ctx, tx, serverID)
+	changed, err := s.rerouteForwardsTx(ctx, tx, serverID, false)
 	if err != nil {
 		return model.Server{}, err
 	}
@@ -227,7 +251,43 @@ func (s *Store) UpdateAgentNetwork(ctx context.Context, serverID string, update 
 	return updated, nil
 }
 
-func (s *Store) rerouteForwardsTx(ctx context.Context, tx *sql.Tx, changedServerID string) ([]string, error) {
+// requireMappedListeners rejects NAT port mappings that leave a managed node
+// or a forward ingress of the server without a public port.
+func requireMappedListeners(ctx context.Context, tx *sql.Tx, server model.Server) error {
+	if !server.NAT() {
+		return nil
+	}
+	rows, err := tx.QueryContext(ctx, `SELECT name,listen_port FROM nodes WHERE server_id=? AND managed=1
+		UNION ALL SELECT name,listen_port FROM forwards WHERE ingress_server_id=? ORDER BY 2`, server.ID, server.ID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	var unmapped []string
+	for rows.Next() {
+		var name string
+		var port uint16
+		if err := rows.Scan(&name, &port); err != nil {
+			return err
+		}
+		if !server.MapsHostPort(port) {
+			unmapped = append(unmapped, fmt.Sprintf("%s（%d）", name, port))
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(unmapped) > 0 {
+		return fmt.Errorf("%w: 这些节点或转发的端口不在端口映射内：%s。先删除这些节点或修改转发的入口端口，再保存映射", ErrConflict, strings.Join(unmapped, "、"))
+	}
+	return nil
+}
+
+// rerouteForwardsTx recomputes the target address and dialed port of the
+// forwards that start at or lead to a changed server. With strict set, a
+// target port that NAT port mappings no longer cover is an error; otherwise
+// the forward keeps its current target.
+func (s *Store) rerouteForwardsTx(ctx context.Context, tx *sql.Tx, changedServerID string, strict bool) ([]string, error) {
 	servers, err := s.listServersFrom(ctx, tx)
 	if err != nil {
 		return nil, err
@@ -237,18 +297,23 @@ func (s *Store) rerouteForwardsTx(ctx context.Context, tx *sql.Tx, changedServer
 		serversByID[server.ID] = server
 	}
 
-	nodeRows, err := tx.QueryContext(ctx, `SELECT id,server_id FROM nodes`)
+	type nodeHost struct {
+		server string
+		port   uint16
+	}
+	nodeRows, err := tx.QueryContext(ctx, `SELECT id,server_id,listen_port FROM nodes`)
 	if err != nil {
 		return nil, err
 	}
-	nodeServers := make(map[string]string)
+	nodeHosts := make(map[string]nodeHost)
 	for nodeRows.Next() {
-		var nodeID, serverID string
-		if err := nodeRows.Scan(&nodeID, &serverID); err != nil {
+		var nodeID string
+		var host nodeHost
+		if err := nodeRows.Scan(&nodeID, &host.server, &host.port); err != nil {
 			nodeRows.Close()
 			return nil, err
 		}
-		nodeServers[nodeID] = serverID
+		nodeHosts[nodeID] = host
 	}
 	if err := nodeRows.Err(); err != nil {
 		nodeRows.Close()
@@ -268,6 +333,7 @@ func (s *Store) rerouteForwardsTx(ctx context.Context, tx *sql.Tx, changedServer
 		return nil, err
 	}
 	updates := []update{}
+	var unmapped []string
 	for forwardRows.Next() {
 		var id string
 		var data []byte
@@ -280,9 +346,9 @@ func (s *Store) rerouteForwardsTx(ctx context.Context, tx *sql.Tx, changedServer
 			forwardRows.Close()
 			return nil, err
 		}
-		targetServerID := forward.TargetServerID
-		if targetServerID == "" {
-			targetServerID = nodeServers[forward.TargetNodeID]
+		targetServerID, servicePort := forward.TargetServerID, forward.ServicePort()
+		if node, exists := nodeHosts[forward.TargetNodeID]; exists {
+			targetServerID, servicePort = node.server, node.port
 		}
 		if targetServerID == "" {
 			continue
@@ -296,11 +362,21 @@ func (s *Store) rerouteForwardsTx(ctx context.Context, tx *sql.Tx, changedServer
 			continue
 		}
 		targetAddress := model.SelectServerTargetAddress(ingress, target)
-		if targetAddress == "" || (forward.TargetHost == targetAddress && forward.TargetServerID == targetServerID) {
+		if targetAddress == "" {
 			continue
 		}
-		forward.TargetHost = targetAddress
-		forward.TargetServerID = targetServerID
+		targetPort, mapped := target.PublicPort(targetAddress, servicePort)
+		if !mapped {
+			if strict {
+				unmapped = append(unmapped, fmt.Sprintf("%s（%d）", forward.Name, servicePort))
+			}
+			continue
+		}
+		if forward.TargetHost == targetAddress && forward.TargetPort == targetPort && forward.TargetServerID == targetServerID {
+			continue
+		}
+		forward.TargetHost, forward.TargetPort = targetAddress, targetPort
+		forward.TargetServerID, forward.TargetServerPort = targetServerID, servicePort
 		updated, err := json.Marshal(forward)
 		if err != nil {
 			forwardRows.Close()
@@ -314,6 +390,9 @@ func (s *Store) rerouteForwardsTx(ctx context.Context, tx *sql.Tx, changedServer
 	}
 	if err := forwardRows.Close(); err != nil {
 		return nil, err
+	}
+	if len(unmapped) > 0 {
+		return nil, fmt.Errorf("%w: 这些转发的目标端口不在端口映射内：%s。先修改这些转发，再保存", ErrConflict, strings.Join(unmapped, "、"))
 	}
 
 	ingressServers := make(map[string]struct{})
@@ -331,6 +410,14 @@ func (s *Store) rerouteForwardsTx(ctx context.Context, tx *sql.Tx, changedServer
 		}
 	}
 	return ids, nil
+}
+
+// portMappings stores no mappings as an empty list rather than null.
+func portMappings(mappings []model.PortMapping) []model.PortMapping {
+	if mappings == nil {
+		return []model.PortMapping{}
+	}
+	return mappings
 }
 
 func (s *Store) SetServerRegionIfBlank(ctx context.Context, serverID, region string) error {
@@ -427,7 +514,7 @@ func (s *Store) ListServers(ctx context.Context) ([]model.Server, error) {
 }
 
 const serverQuery = `SELECT s.id,s.name,s.address,s.ipv4_address,s.ipv6_address,s.egress_ipv4,s.egress_ipv6,
-      s.region,s.traffic_reset_day,s.agent_status,COALESCE(s.last_seen_at,''),s.created_at,
+      s.region,s.nat_ports,s.traffic_reset_day,s.agent_status,COALESCE(s.last_seen_at,''),s.created_at,
       r.applied_revision,r.agent_version,r.sing_box_version,r.realm_version,r.units_json,r.reported_at
       FROM servers s LEFT JOIN agent_runtime r ON r.server_id=s.id`
 
@@ -462,13 +549,19 @@ func (s *Store) getServerFrom(ctx context.Context, db queryer, serverID string) 
 
 func scanServer(row interface{ Scan(...any) error }) (model.Server, error) {
 	var server model.Server
-	var lastSeen, created string
+	var natPorts, lastSeen, created string
 	var applied sql.NullInt64
 	var agentVersion, singBox, realm, units, reported sql.NullString
 	if err := row.Scan(&server.ID, &server.Name, &server.Address, &server.IPv4Address, &server.IPv6Address,
-		&server.EgressIPv4, &server.EgressIPv6, &server.Region, &server.TrafficResetDay, &server.AgentStatus, &lastSeen, &created,
+		&server.EgressIPv4, &server.EgressIPv6, &server.Region, &natPorts, &server.TrafficResetDay, &server.AgentStatus, &lastSeen, &created,
 		&applied, &agentVersion, &singBox, &realm, &units, &reported); err != nil {
 		return model.Server{}, err
+	}
+	if err := json.Unmarshal([]byte(natPorts), &server.NATPorts); err != nil {
+		return model.Server{}, err
+	}
+	if len(server.NATPorts) == 0 {
+		server.NATPorts = nil
 	}
 	server.CreatedAt, _ = time.Parse(time.RFC3339Nano, created)
 	server.LastSeenAt, _ = time.Parse(time.RFC3339Nano, lastSeen)

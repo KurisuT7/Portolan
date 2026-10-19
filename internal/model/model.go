@@ -52,6 +52,9 @@ type Server struct {
 	EgressIPv4  bool   `json:"egress_ipv4"`
 	EgressIPv6  bool   `json:"egress_ipv6"`
 	Region      string `json:"region,omitempty"`
+	// NATPorts lists the provider's port forwarding when the server shares its
+	// public IPv4 address. Empty means every port is reachable.
+	NATPorts []PortMapping `json:"nat_ports,omitempty"`
 	// TrafficResetDay is the day of the month a traffic cycle starts, matching
 	// the day a provider resets its allowance. Months without that day start
 	// the cycle on their last day. 1 counts calendar months; zero means 1.
@@ -207,7 +210,7 @@ func (s Server) Validate() error {
 	if s.TrafficResetDay < 0 || s.TrafficResetDay > 31 {
 		return errors.New("traffic reset day must be between 1 and 31")
 	}
-	return nil
+	return validatePortMappings(s.NATPorts)
 }
 
 // IsPublicRoutableIP reports whether an address is suitable as an automatically
@@ -379,20 +382,24 @@ const (
 	ForwardRealm   ForwardEngine = "realm"
 )
 
+// Forward listens on ListenPort of the ingress server and dials TargetHost and
+// TargetPort. A server or node target also records TargetServerPort, the host
+// port on the target server, which NAT port forwarding maps to TargetPort.
 type Forward struct {
-	ID              string        `json:"id"`
-	IngressServerID string        `json:"ingress_server_id"`
-	Name            string        `json:"name"`
-	ListenPort      uint16        `json:"listen_port"`
-	Networks        []string      `json:"networks"`
-	TargetHost      string        `json:"target_host"`
-	TargetPort      uint16        `json:"target_port"`
-	TargetServerID  string        `json:"target_server_id,omitempty"`
-	TargetNodeID    string        `json:"target_node_id,omitempty"`
-	Engine          ForwardEngine `json:"engine"`
-	Enabled         bool          `json:"enabled"`
-	CreatedAt       time.Time     `json:"created_at"`
-	UpdatedAt       time.Time     `json:"updated_at,omitzero"`
+	ID               string        `json:"id"`
+	IngressServerID  string        `json:"ingress_server_id"`
+	Name             string        `json:"name"`
+	ListenPort       uint16        `json:"listen_port"`
+	Networks         []string      `json:"networks"`
+	TargetHost       string        `json:"target_host"`
+	TargetPort       uint16        `json:"target_port"`
+	TargetServerID   string        `json:"target_server_id,omitempty"`
+	TargetNodeID     string        `json:"target_node_id,omitempty"`
+	TargetServerPort uint16        `json:"target_server_port,omitempty"`
+	Engine           ForwardEngine `json:"engine"`
+	Enabled          bool          `json:"enabled"`
+	CreatedAt        time.Time     `json:"created_at"`
+	UpdatedAt        time.Time     `json:"updated_at,omitzero"`
 }
 
 func (n Node) Validate() error {
@@ -502,7 +509,7 @@ func (f Forward) Validate() error {
 	if len(target) > 253 || (net.ParseIP(target) == nil && !hostPattern.MatchString(target)) {
 		return errors.New("forward target host is invalid")
 	}
-	if f.TargetServerID != "" && f.TargetServerID == f.IngressServerID && f.TargetPort == f.ListenPort {
+	if f.TargetServerID != "" && f.TargetServerID == f.IngressServerID && f.ServicePort() == f.ListenPort {
 		return errors.New("forward cannot target its own listening port")
 	}
 	if f.Engine != ForwardSingBox && f.Engine != ForwardRealm {
@@ -517,6 +524,15 @@ func (f Forward) Validate() error {
 		}
 	}
 	return nil
+}
+
+// ServicePort is the host port on the target server. Forwards saved before
+// TargetServerPort existed dial the host port directly.
+func (f Forward) ServicePort() uint16 {
+	if f.TargetServerPort != 0 {
+		return f.TargetServerPort
+	}
+	return f.TargetPort
 }
 
 // NormalizeHost keeps hostnames unchanged and stores IP literals without URL

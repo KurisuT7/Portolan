@@ -23,9 +23,9 @@ export function Badge({ tone = "neutral", children }: { tone?: Tone; children: R
   return <span className={`badge tone-${tone}`}>{children}</span>;
 }
 
-export function ProtocolTag({ protocol, port }: { protocol: ApiNode["protocol"]; port?: number }) {
+export function ProtocolTag({ protocol, port, title }: { protocol: ApiNode["protocol"]; port?: number; title?: string }) {
   return (
-    <span className="ptag" data-protocol={protocol}>
+    <span className="ptag" data-protocol={protocol} title={title}>
       {protocolShort[protocol]}
       {port != null && <b>{port}</b>}
     </span>

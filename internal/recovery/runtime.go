@@ -191,8 +191,9 @@ func decodeServerPlan(data []byte, base string) (ServerPlan, error) {
 			return ServerPlan{}, fmt.Errorf("server metadata must explicitly contain %q", name)
 		}
 	}
+	optional := []string{"nat_ports"}
 	for name := range fields {
-		if !slices.Contains(required, name) {
+		if !slices.Contains(required, name) && !slices.Contains(optional, name) {
 			return ServerPlan{}, fmt.Errorf("unknown server metadata field %q", name)
 		}
 	}
@@ -269,46 +270,60 @@ func recoverPlan(plan Plan) (Result, error) {
 			result.Forwards = append(result.Forwards, forward)
 		}
 	}
-	for _, forward := range result.Forwards {
-		if err := validateForwardAssociation(forward, serversByID, nodesByID); err != nil {
+	for index, forward := range result.Forwards {
+		resolved, err := validateForwardAssociation(forward, serversByID, nodesByID)
+		if err != nil {
 			return Result{}, err
 		}
+		result.Forwards[index] = resolved
 	}
 	return result, nil
 }
 
-func validateForwardAssociation(forward model.Forward, servers map[string]model.Server, nodes map[string]model.Node) error {
+// validateForwardAssociation checks a recovered forward against its target
+// metadata and records the host port it reaches on the target server.
+func validateForwardAssociation(forward model.Forward, servers map[string]model.Server, nodes map[string]model.Node) (model.Forward, error) {
 	ingress, ok := servers[forward.IngressServerID]
 	if !ok {
-		return fmt.Errorf("forward %s references unknown ingress server %s", forward.ID, forward.IngressServerID)
+		return model.Forward{}, fmt.Errorf("forward %s references unknown ingress server %s", forward.ID, forward.IngressServerID)
 	}
+	var node model.Node
 	if forward.TargetNodeID != "" {
-		node, ok := nodes[forward.TargetNodeID]
+		node, ok = nodes[forward.TargetNodeID]
 		if !ok {
-			return fmt.Errorf("forward %s references unknown target node %s", forward.ID, forward.TargetNodeID)
+			return model.Forward{}, fmt.Errorf("forward %s references unknown target node %s", forward.ID, forward.TargetNodeID)
 		}
 		if forward.TargetServerID != node.ServerID {
-			return fmt.Errorf("forward %s target node %s belongs to server %s, not explicit target server %s", forward.ID, node.ID, node.ServerID, forward.TargetServerID)
-		}
-		if forward.TargetPort != node.ListenPort {
-			return fmt.Errorf("forward %s target port %d does not match target node %s port %d", forward.ID, forward.TargetPort, node.ID, node.ListenPort)
+			return model.Forward{}, fmt.Errorf("forward %s target node %s belongs to server %s, not explicit target server %s", forward.ID, node.ID, node.ServerID, forward.TargetServerID)
 		}
 	}
 	if forward.TargetServerID == "" {
-		return nil
+		return forward, nil
 	}
 	target, ok := servers[forward.TargetServerID]
 	if !ok {
-		return fmt.Errorf("forward %s references unknown target server %s", forward.ID, forward.TargetServerID)
+		return model.Forward{}, fmt.Errorf("forward %s references unknown target server %s", forward.ID, forward.TargetServerID)
+	}
+	if forward.TargetNodeID != "" {
+		if expected, mapped := target.PublicPort(forward.TargetHost, node.ListenPort); !mapped || forward.TargetPort != expected {
+			return model.Forward{}, fmt.Errorf("forward %s target port %d does not match target node %s port %d", forward.ID, forward.TargetPort, node.ID, node.ListenPort)
+		}
+		forward.TargetServerPort = node.ListenPort
+	} else {
+		hostPort, mapped := target.HostPort(forward.TargetHost, forward.TargetPort)
+		if !mapped {
+			return model.Forward{}, fmt.Errorf("forward %s target port %d is outside the NAT port mappings of server %s", forward.ID, forward.TargetPort, target.ID)
+		}
+		forward.TargetServerPort = hostPort
 	}
 	expectedHost := model.SelectServerTargetAddress(ingress, target)
 	if expectedHost == "" {
-		return fmt.Errorf("forward %s target server %s has no address derivable from the explicit recovery metadata", forward.ID, target.ID)
+		return model.Forward{}, fmt.Errorf("forward %s target server %s has no address derivable from the explicit recovery metadata", forward.ID, target.ID)
 	}
 	if model.NormalizeHost(forward.TargetHost) != model.NormalizeHost(expectedHost) {
-		return fmt.Errorf("forward %s runtime target host %s does not match target server %s selected address %s", forward.ID, forward.TargetHost, target.ID, expectedHost)
+		return model.Forward{}, fmt.Errorf("forward %s runtime target host %s does not match target server %s selected address %s", forward.ID, forward.TargetHost, target.ID, expectedHost)
 	}
-	return nil
+	return forward, nil
 }
 
 func recoverRelease(entry ServerPlan) ([]RecoveredNode, []model.Forward, error) {

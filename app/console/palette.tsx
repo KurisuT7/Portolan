@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { CornerDownLeft, Search } from "lucide-react";
-import { serverEndpoint, serverHost } from "../lib/endpoints";
+import { displayPort, serverEndpoint, serverHost } from "../lib/endpoints";
 import { protocolShort } from "../lib/nodes";
 import type { Route } from "../lib/routing";
 import { useFleet } from "./data";
@@ -40,7 +40,7 @@ export function CommandPalette({ onClose, onAction }: { onClose: () => void; onA
         key: `n:${node.id}`,
         group: "节点",
         label: node.name,
-        hint: `${protocolShort[node.protocol]} :${node.listen_port} · ${index.servers.get(node.server_id)?.name ?? ""}`,
+        hint: `${protocolShort[node.protocol]} :${displayPort(index.servers.get(node.server_id), node.listen_port) ?? node.listen_port} · ${index.servers.get(node.server_id)?.name ?? ""}`,
         run: go({ page: "server", id: node.server_id }),
       })),
     ];
