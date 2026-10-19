@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-20
+
 ### 修复
 
 - 核心更新或配置应用失败后，Agent 只等 30 秒确认原版本恢复。单核小机器启动前的 `sing-box check` 就要几十秒，
@@ -108,7 +110,8 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.3
 [0.3.2]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.2
 [0.3.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.0
