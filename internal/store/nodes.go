@@ -20,19 +20,24 @@ const (
 )
 
 func (s *Store) CreateNode(ctx context.Context, node model.Node, profile string) (model.Node, error) {
+	server, err := s.GetServer(ctx, node.ServerID)
+	if err != nil {
+		return model.Node{}, err
+	}
 	if node.ListenPort == 0 {
-		port, err := s.AvailablePort(ctx, node.ServerID)
+		port, err := availablePortFrom(ctx, s.db, server, "")
 		if err != nil {
 			return model.Node{}, err
 		}
 		node.ListenPort = port
+	} else if !server.MapsHostPort(node.ListenPort) {
+		return model.Node{}, fmt.Errorf("%w: 端口 %d 不在 %s 的端口映射内（%s）", ErrInvalidInput, node.ListenPort, server.Name, server.HostPortRanges())
 	}
 	node.Managed = true
 	node.Source = ""
 	if err := node.Validate(); err != nil {
 		return model.Node{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
 	}
-	var err error
 	if node.ID == "" {
 		node.ID, err = randomID("node")
 		if err != nil {

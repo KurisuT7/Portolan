@@ -7,12 +7,17 @@ export type ApiServer = {
   egress_ipv4: boolean;
   egress_ipv6: boolean;
   region?: string;
+  // Provider port forwarding of a server that shares its public IPv4 address.
+  nat_ports?: PortMapping[];
   // The day of the month a traffic cycle starts; 1 counts calendar months.
   traffic_reset_day: number;
   agent_status: string;
   last_seen_at?: string;
   runtime?: ApiRuntime;
 };
+
+// count public ports starting at public reach the host ports starting at host.
+export type PortMapping = { public: number; host: number; count: number };
 
 export type ApiUnit = { name: string; active_state: string; sub_state: string };
 
@@ -48,6 +53,8 @@ export type ApiForward = {
   target_port: number;
   target_server_id?: string;
   target_node_id?: string;
+  // The host port on the target server; target_port is what the ingress dials.
+  target_server_port?: number;
   engine: "sing-box" | "realm";
   enabled: boolean;
   created_at?: string;
@@ -59,6 +66,7 @@ export type ForwardInput = Pick<ApiForward, "name" | "ingress_server_id" | "list
   target_server_id?: string;
   target_host?: string;
   target_port?: number;
+  target_server_port?: number;
 };
 
 export type ApiForwardProbe = {

@@ -3,9 +3,10 @@
 import { Fragment, useState, type FormEvent } from "react";
 import { ArrowRight, Check, Link2, Plus } from "lucide-react";
 import { ApiError, type ApiForward, type ForwardInput } from "../lib/api";
-import { serverEndpoint } from "../lib/endpoints";
+import { displayPort, serverEndpoint } from "../lib/endpoints";
 import { forwardTarget, regionParts, routeState, sortRoutes } from "../lib/fleet";
 import { byteLength, milliseconds, percent } from "../lib/format";
+import { natPortHint } from "../lib/nat";
 import { formatNodeOption, groupNodesByServer } from "../lib/nodes";
 import { routeHref } from "../lib/routing";
 import { configurationState } from "../lib/status";
@@ -153,7 +154,9 @@ export function ForwardForm({ initial, ingressId, onClose }: { initial?: ApiForw
   const [targetNode, setTargetNode] = useState(initial?.target_node_id || (remoteNodes.find((node) => node.managed) ?? remoteNodes[0] ?? data.nodes[0])?.id || "");
   const [targetServer, setTargetServer] = useState(initial?.target_server_id || (data.servers.find((server) => server.id !== firstIngress) ?? data.servers[0])?.id || "");
   const [host, setHost] = useState(initial && !initial.target_node_id && !initial.target_server_id ? initial.target_host : "");
-  const [targetPort, setTargetPort] = useState(initial && !initial.target_node_id ? String(initial.target_port) : "");
+  // A server target names the host port on that server; a custom address the port to dial.
+  const [targetPort, setTargetPort] = useState(initial && !initial.target_node_id
+    ? String(initial.target_server_id ? initial.target_server_port || initial.target_port : initial.target_port) : "");
   const [networks, setNetworks] = useState<ApiForward["networks"]>(initial?.networks ?? ["tcp", "udp"]);
   const [engine, setEngine] = useState<ApiForward["engine"]>(initial?.engine ?? "realm");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
@@ -186,7 +189,7 @@ export function ForwardForm({ initial, ingressId, onClose }: { initial?: ApiForw
       engine,
       enabled,
       ...(kind === "node" ? { target_node_id: targetNode }
-        : kind === "server" ? { target_server_id: targetServer, target_port: Number(targetPort) }
+        : kind === "server" ? { target_server_id: targetServer, target_server_port: Number(targetPort) }
         : { target_host: host.trim(), target_port: Number(targetPort) }),
     };
     setBusy(true);
@@ -253,7 +256,7 @@ export function ForwardForm({ initial, ingressId, onClose }: { initial?: ApiForw
                 {data.servers.map((server) => <option key={server.id} value={server.id}>{server.name}</option>)}
               </select>
             </Field>
-            <Field label="入口端口" hint={initial ? "修改后原端口停止监听" : undefined}>
+            <Field label="入口端口" hint={[initial && "修改后原端口停止监听", natPortHint(index.servers.get(ingress), port)].filter(Boolean).join(" · ") || undefined}>
               <input type="number" min={1} max={65535} value={port} onChange={(event) => setPort(event.target.value)} required={!!initial} placeholder="自动分配" />
             </Field>
           </div>
@@ -277,7 +280,9 @@ export function ForwardForm({ initial, ingressId, onClose }: { initial?: ApiForw
                 {!index.nodes.has(targetNode) && <option value="">选择节点</option>}
                 {groups.map((group) => (
                   <optgroup key={group.serverId} label={group.serverName}>
-                    {group.nodes.map((node) => <option key={node.id} value={node.id}>{formatNodeOption(node)}</option>)}
+                    {group.nodes.map((node) => (
+                      <option key={node.id} value={node.id}>{formatNodeOption(node, displayPort(index.servers.get(node.server_id), node.listen_port) ?? node.listen_port)}</option>
+                    ))}
                   </optgroup>
                 ))}
               </select>
@@ -296,7 +301,7 @@ export function ForwardForm({ initial, ingressId, onClose }: { initial?: ApiForw
                   <input value={host} onChange={(event) => setHost(event.target.value)} required placeholder="IPv4、IPv6 或域名" spellCheck={false} />
                 </Field>
               )}
-              <Field label="端口">
+              <Field label="端口" hint={kind === "server" ? natPortHint(index.servers.get(targetServer), targetPort) : undefined}>
                 <input type="number" min={1} max={65535} value={targetPort} onChange={(event) => setTargetPort(event.target.value)} required />
               </Field>
             </div>

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS servers (
   egress_ipv4 INTEGER NOT NULL DEFAULT 0,
   egress_ipv6 INTEGER NOT NULL DEFAULT 0,
   region TEXT NOT NULL DEFAULT '',
+  nat_ports TEXT NOT NULL DEFAULT '[]',
   traffic_reset_day INTEGER NOT NULL DEFAULT 1,
   agent_status TEXT NOT NULL DEFAULT 'pending',
   enroll_token_hash TEXT,
@@ -147,6 +148,7 @@ CREATE TABLE IF NOT EXISTS traffic_reports (
 		{table: "servers", name: "egress_ipv4", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "servers", name: "egress_ipv6", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "servers", name: "traffic_reset_day", definition: "INTEGER NOT NULL DEFAULT 1"},
+		{table: "servers", name: "nat_ports", definition: "TEXT NOT NULL DEFAULT '[]'"},
 		{table: "jobs", name: "revision", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "agent_runtime", name: "agent_version", definition: "TEXT NOT NULL DEFAULT ''"},
 	} {

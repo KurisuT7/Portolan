@@ -45,11 +45,29 @@ export function formatEndpoint(host: string, port: string | number) {
   return `${normalized.includes(":") ? `[${normalized}]` : normalized}:${port}`;
 }
 
+type ServerAddress = Pick<ApiServer, "address" | "ipv4_address" | "ipv6_address" | "nat_ports">;
+
 export function serverHost(server: Pick<ApiServer, "address" | "ipv4_address" | "ipv6_address"> | undefined) {
   return preferredIngressHost(server ? { address: server.address, ipv4: server.ipv4_address, ipv6: server.ipv6_address } : undefined);
 }
 
-export function serverEndpoint(server: Pick<ApiServer, "address" | "ipv4_address" | "ipv6_address"> | undefined, port: number) {
+// The port clients dial at host to reach a host port of the server, or null
+// when its NAT port mappings leave the port unreachable. NAT port forwarding
+// covers IPv4 only: an IPv6 address reaches the host port directly.
+export function publicPort(server: Pick<ApiServer, "nat_ports"> | undefined, host: string, port: number) {
+  const mappings = server?.nat_ports ?? [];
+  if (!mappings.length || normalizeHost(host).includes(":")) return port;
+  const mapping = mappings.find((item) => port >= item.host && port < item.host + item.count);
+  return mapping ? mapping.public + port - mapping.host : null;
+}
+
+// The port to show for a host port: the one clients dial at the server's address.
+export function displayPort(server: ServerAddress | undefined, port: number) {
+  return publicPort(server, serverHost(server), port);
+}
+
+export function serverEndpoint(server: ServerAddress | undefined, port: number) {
   const host = serverHost(server);
-  return host ? formatEndpoint(host, port) : "";
+  const published = publicPort(server, host, port);
+  return host && published != null ? formatEndpoint(host, published) : "";
 }

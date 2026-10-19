@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { ArrowUpCircle, Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Fragment, useState, type FormEvent } from "react";
+import { ArrowRight, ArrowUpCircle, Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { agentUpdateState, agentUpdateSummary } from "../lib/agent";
 import type { ApiServer, CreateServerResponse } from "../lib/api";
-import { serverHost } from "../lib/endpoints";
+import { displayPort, serverHost } from "../lib/endpoints";
+import { describeMapping, mappedPortCount, mappingRows, parseMappingRows, type MappingRow } from "../lib/nat";
 import { regionParts, targetsServer } from "../lib/fleet";
 import { relativeTime, timeLabel } from "../lib/format";
 import { routeHref } from "../lib/routing";
@@ -133,7 +134,7 @@ function ServerCard({ server }: { server: ApiServer }) {
         {host ? <><Address value={host} /><CopyButton value={host} label="复制服务器地址" /></> : <span className="sub">等待上报地址</span>}
       </span>
       <div className="ptags">
-        {nodes.slice(0, 4).map((node) => <ProtocolTag key={node.id} protocol={node.protocol} port={node.listen_port} />)}
+        {nodes.slice(0, 4).map((node) => <ProtocolTag key={node.id} protocol={node.protocol} port={displayPort(server, node.listen_port) ?? node.listen_port} />)}
         {nodes.length > 4 && <span className="sub">+{nodes.length - 4}</span>}
         {!nodes.length && <span className="sub">无节点</span>}
       </div>
@@ -266,6 +267,7 @@ function ServerFacts({ server }: { server: ApiServer }) {
           <span className="copyable" key={address}><Address value={address} /><CopyButton value={address} label={`复制 ${address}`} /></span>
         )) : <span className="muted">等待 Agent 上报</span>}
       </div>
+      {server.nat_ports?.length ? <NatFact server={server} mappings={server.nat_ports} /> : null}
       <div className="fact">
         <span className="fact-label">Agent</span>
         <Status tone={state.tone}>{state.label}</Status>
@@ -287,6 +289,28 @@ function ServerFacts({ server }: { server: ApiServer }) {
           {busy ? <Spinner size={14} /> : <RefreshCw size={14} />}重新同步
         </button>
       </div>
+    </div>
+  );
+}
+
+function NatFact({ server, mappings }: { server: ApiServer; mappings: NonNullable<ApiServer["nat_ports"]> }) {
+  const { index } = useFleet();
+  const ports = [
+    ...(index.nodesByServer.get(server.id) ?? []).map((node) => node.listen_port),
+    ...(index.forwardsByIngress.get(server.id) ?? []).map((forward) => forward.listen_port),
+  ];
+  const used = new Set(ports.filter((port) => mappings.some((item) => port >= item.host && port < item.host + item.count))).size;
+  const shown = mappings.slice(0, 3);
+  return (
+    <div className="fact">
+      <span className="fact-label">NAT 端口</span>
+      {shown.map((mapping) => (
+        <span className="mono nat-map" key={mapping.host}>
+          {describeMapping(mapping).split(" → ").map((part, position) => <span key={position}>{position > 0 && "→ "}{part}</span>)}
+        </span>
+      ))}
+      {mappings.length > shown.length && <span className="sub">另有 {mappings.length - shown.length} 段</span>}
+      <span className="sub">已用 {used} / {mappedPortCount(mappings)}</span>
     </div>
   );
 }
@@ -429,20 +453,62 @@ function InstallDialog({ server, onClose }: { server: ApiServer; onClose: () => 
   );
 }
 
+function NatPortsField({ rows, onChange, ipv6 }: { rows: MappingRow[]; onChange: (rows: MappingRow[]) => void; ipv6: boolean }) {
+  const update = (index: number, row: Partial<MappingRow>) => onChange(rows.map((item, position) => (position === index ? { ...item, ...row } : item)));
+  return (
+    <div className="field">
+      <span className="field-label">NAT 端口映射</span>
+      {rows.length > 0 && (
+        <div className="nat-rows">
+          <span className="nat-head">公网端口</span>
+          <span />
+          <span className="nat-head">本机端口</span>
+          <span />
+          {rows.map((row, index) => (
+            <Fragment key={index}>
+              <input aria-label={`第 ${index + 1} 段公网端口`} value={row.public} onChange={(event) => update(index, { public: event.target.value })}
+                placeholder="30001-30020" inputMode="numeric" spellCheck={false} />
+              <ArrowRight size={14} aria-hidden="true" />
+              <input aria-label={`第 ${index + 1} 段本机端口`} value={row.host} onChange={(event) => update(index, { host: event.target.value })}
+                placeholder="与公网相同" inputMode="numeric" spellCheck={false} />
+              <button type="button" className="icon-btn icon-btn-sm icon-btn-danger" aria-label={`删除第 ${index + 1} 段`} title="删除"
+                onClick={() => onChange(rows.filter((_, position) => position !== index))}>
+                <X size={14} />
+              </button>
+            </Fragment>
+          ))}
+        </div>
+      )}
+      <button type="button" className="btn btn-sm nat-add" onClick={() => onChange([...rows, { public: "", host: "" }])}>
+        <Plus size={14} />添加端口段
+      </button>
+      <span className="field-hint">共享公网 IPv4 的机器按服务商给的端口映射填写，节点和转发只使用映射内的端口。不填表示所有端口都能直接访问。</span>
+      {ipv6 && rows.some((row) => row.public.trim()) && <p className="inline-warn">连接地址是 IPv6，导出的链接直接用本机端口，不经过端口映射。</p>}
+    </div>
+  );
+}
+
 export function ServerForm({ server, onClose }: { server?: ApiServer; onClose: () => void }) {
   const { refresh } = useFleet();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [enrollment, setEnrollment] = useState<CreateServerResponse | null>(null);
+  const [address, setAddress] = useState(server?.address ?? "");
+  const [natRows, setNatRows] = useState<MappingRow[]>(() => mappingRows(server?.nat_ports));
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     const text = (key: string) => String(form.get(key) || "").trim();
+    const nat = parseMappingRows(natRows);
+    if ("error" in nat) return setError(nat.error);
     setBusy(true);
     setError("");
     try {
       if (server) {
-        await api.updateServer(server.id, { name: text("name"), address: text("address"), region: text("region"), traffic_reset_day: Number(text("traffic_reset_day")) });
+        await api.updateServer(server.id, {
+          name: text("name"), address: text("address"), region: text("region"), traffic_reset_day: Number(text("traffic_reset_day")),
+          nat_ports: nat.mappings,
+        });
         await refresh();
         toast("已保存");
         onClose();
@@ -480,8 +546,9 @@ export function ServerForm({ server, onClose }: { server?: ApiServer; onClose: (
           {server && (
             <>
               <Field label="连接地址" hint="导出节点和转发入口时使用。留空则使用 Agent 上报的公网地址。">
-                <input name="address" defaultValue={server.address} placeholder="IPv4、IPv6 或域名" spellCheck={false} />
+                <input name="address" value={address} onChange={(event) => setAddress(event.target.value)} placeholder="IPv4、IPv6 或域名" spellCheck={false} />
               </Field>
+              <NatPortsField rows={natRows} onChange={setNatRows} ipv6={serverHost({ ...server, address }).includes(":")} />
               <Field label="地区" hint="国家代码在前，例如 JP 东京">
                 <input name="region" defaultValue={server.region} />
               </Field>

@@ -178,6 +178,32 @@ func TestLoadRejectsUnrecoverableDisabledObjects(t *testing.T) {
 	}
 }
 
+func TestValidateForwardAssociationMapsNATTargets(t *testing.T) {
+	servers := map[string]model.Server{
+		"ingress": {ID: "ingress", Name: "Ingress", Address: "198.51.100.10", EgressIPv4: true},
+		"target": {ID: "target", Name: "Target", Address: "203.0.113.20", EgressIPv4: true,
+			NATPorts: []model.PortMapping{{Public: 30001, Host: 10001, Count: 20}}},
+	}
+	nodes := map[string]model.Node{"target-node": {ID: "target-node", ServerID: "target", Name: "Target node", ListenPort: 10005}}
+	toNode := model.Forward{ID: "to-node", IngressServerID: "ingress", TargetServerID: "target", TargetNodeID: "target-node",
+		TargetHost: "203.0.113.20", TargetPort: 30005}
+	if resolved, err := validateForwardAssociation(toNode, servers, nodes); err != nil || resolved.TargetServerPort != 10005 {
+		t.Fatalf("node target through NAT: %#v err=%v", resolved, err)
+	}
+	toNode.TargetPort = 10005
+	if _, err := validateForwardAssociation(toNode, servers, nodes); err == nil {
+		t.Fatal("a node target must dial the mapped public port")
+	}
+	toPort := model.Forward{ID: "to-port", IngressServerID: "ingress", TargetServerID: "target", TargetHost: "203.0.113.20", TargetPort: 30010}
+	if resolved, err := validateForwardAssociation(toPort, servers, nodes); err != nil || resolved.TargetServerPort != 10010 {
+		t.Fatalf("server target through NAT: %#v err=%v", resolved, err)
+	}
+	toPort.TargetPort = 443
+	if _, err := validateForwardAssociation(toPort, servers, nodes); err == nil || !strings.Contains(err.Error(), "outside the NAT port mappings") {
+		t.Fatalf("an unmapped public port must be rejected: %v", err)
+	}
+}
+
 func TestValidateForwardAssociationRejectsRuntimeDrift(t *testing.T) {
 	servers := map[string]model.Server{
 		"ingress": {ID: "ingress", Name: "Ingress", Address: "198.51.100.10", EgressIPv4: true},
@@ -190,7 +216,7 @@ func TestValidateForwardAssociationRejectsRuntimeDrift(t *testing.T) {
 		ID: "forward", IngressServerID: "ingress", TargetServerID: "target", TargetNodeID: "target-node",
 		TargetHost: "target.example.com", TargetPort: 24443,
 	}
-	if err := validateForwardAssociation(valid, servers, nodes); err != nil {
+	if _, err := validateForwardAssociation(valid, servers, nodes); err != nil {
 		t.Fatalf("valid association rejected: %v", err)
 	}
 	tests := []struct {
@@ -207,7 +233,7 @@ func TestValidateForwardAssociationRejectsRuntimeDrift(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			forward := valid
 			test.mutate(&forward)
-			if err := validateForwardAssociation(forward, servers, nodes); err == nil || !strings.Contains(err.Error(), test.want) {
+			if _, err := validateForwardAssociation(forward, servers, nodes); err == nil || !strings.Contains(err.Error(), test.want) {
 				t.Fatalf("expected %q failure, got %v", test.want, err)
 			}
 		})

@@ -784,6 +784,12 @@ fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
 .field { display: grid; align-content: start; gap: 7px; min-width: 0; }
 .field-label { color: var(--text-2); font-size: 12.5px; font-weight: 500; }
 .field-hint { color: var(--text-3); font-size: 12px; line-height: 1.5; }
+.nat-rows { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.nat-rows > svg { color: var(--text-3); }
+.nat-head { color: var(--text-3); font-size: 12px; }
+.nat-add { justify-self: start; }
+.nat-map { display: flex; flex-wrap: wrap; column-gap: 0.6ch; }
+.nat-map > span { white-space: nowrap; }
 .advanced { padding-top: 4px; }
 .advanced summary { width: fit-content; color: var(--text-2); font-size: 13px; cursor: pointer; }
 .advanced summary:hover { color: var(--text); }
