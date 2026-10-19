@@ -17,7 +17,7 @@ import { ForwardForm, ForwardsPage } from "./forwards";
 import { ForwardPage } from "./forward";
 import { CommandPalette, type PaletteAction } from "./palette";
 import { ThemeMenu, useThemeSync } from "./theme";
-import { PanelUpdateButton, PanelUpdateDialog, usePanelUpdate, type PanelUpdateControl } from "./update";
+import { CheckUpdateButton, PanelUpdateButton, PanelUpdateDialog, usePanelUpdate, type PanelUpdateControl } from "./update";
 
 const tabs: Array<{ label: string; route: Route; pages: Route["page"][] }> = [
   { label: "总览", route: { page: "overview" }, pages: ["overview"] },
@@ -296,6 +296,7 @@ function Shell({ control }: { control: ConsoleControl }) {
             {panelUpdate.view.kind === "available" && (
               <button className="footer-link" onClick={() => setUpdating(true)}>有新版本 {panelUpdate.view.target}</button>
             )}
+            {panelUpdate.view.kind === "current" && <CheckUpdateButton control={panelUpdate} onAvailable={() => setUpdating(true)} />}
             {control.info?.geoip_provider === "dbip" && <a href="https://db-ip.com" target="_blank" rel="noreferrer">IP Geolocation by DB-IP</a>}
           </footer>
           {security && <SecurityDialog control={control} onClose={() => setSecurity(false)} />}

@@ -36,8 +36,8 @@ export function usePanelUpdate() {
   const [watching, setWatching] = useState("");
   const [phase, setPhase] = useState<UpdatePhase>("installing");
 
-  const load = useCallback(async (signal?: AbortSignal) => {
-    const next = await api.panelUpdate(signal);
+  const load = useCallback(async (signal?: AbortSignal, check = false) => {
+    const next = await api.panelUpdate(signal, check);
     setStatus(next);
     return next;
   }, []);
@@ -121,7 +121,26 @@ export function usePanelUpdate() {
   }
 
   const view: PanelUpdateView = target ? { kind: "updating", target } : panelUpdateView(status);
-  return { status, view, phase, start };
+  return { status, view, phase, start, check: () => load(undefined, true) };
+}
+
+// Checks GitHub now and opens the update dialog when a newer release exists.
+export function CheckUpdateButton({ control, onAvailable }: { control: PanelUpdateControl; onAvailable: () => void }) {
+  const [busy, setBusy] = useState(false);
+  async function check() {
+    setBusy(true);
+    try {
+      const next = await control.check();
+      if (next.check_error) toast(`无法检查更新：${next.check_error}`, "bad");
+      else if (panelUpdateView(next).kind === "current") toast(`已是最新版本 ${next.current}`);
+      else onAvailable();
+    } catch (failure) {
+      toast(errorText(failure), "bad");
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <button className="footer-link" disabled={busy} onClick={() => void check()}>{busy ? "正在检查…" : "检查更新"}</button>;
 }
 
 export type PanelUpdateControl = ReturnType<typeof usePanelUpdate>;

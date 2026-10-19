@@ -354,8 +354,9 @@ export class PortolanApi {
     return this.request<{ queued: number }>("/api/v1/agent-updates", { method: "POST" });
   }
 
-  async panelUpdate(signal?: AbortSignal) {
-    return this.request<ApiPanelUpdate>("/api/v1/panel/update", { signal }, true, 20_000);
+  // check asks the panel to look on GitHub again instead of answering from its hourly cache.
+  async panelUpdate(signal?: AbortSignal, check = false) {
+    return this.request<ApiPanelUpdate>(`/api/v1/panel/update${check ? "?check=1" : ""}`, { signal }, true, 20_000);
   }
 
   async startPanelUpdate(version: string) {

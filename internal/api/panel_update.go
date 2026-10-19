@@ -9,10 +9,15 @@ import (
 )
 
 // panelUpdate reports the running and latest releases and the state of the
-// updater, when this installation has one.
+// updater, when this installation has one. With check=1 the latest release is
+// read from GitHub again rather than from the hourly cache.
 func (s *Server) panelUpdate(w http.ResponseWriter, r *http.Request) {
 	response := map[string]any{"current": buildinfo.Version, "deployment": s.deployment, "updater": s.updater != nil}
-	if latest, err := s.releases.Latest(r.Context()); err != nil {
+	latestRelease := s.releases.Latest
+	if r.URL.Query().Get("check") == "1" {
+		latestRelease = s.releases.Check
+	}
+	if latest, err := latestRelease(r.Context()); err != nil {
 		response["check_error"] = err.Error()
 	} else {
 		response["latest"] = latest

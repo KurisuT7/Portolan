@@ -55,6 +55,34 @@ func TestLatestReadsTheStableReleaseOnce(t *testing.T) {
 	}
 }
 
+func TestCheckFindsAReleasePublishedSinceTheCachedAnswer(t *testing.T) {
+	t.Parallel()
+	var tag atomic.Value
+	tag.Store("v0.3.0")
+	var calls atomic.Int32
+	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		_, _ = w.Write([]byte(`{"tag_name":"` + tag.Load().(string) + `"}`))
+	}))
+	t.Cleanup(github.Close)
+	releases := &Releases{API: github.URL, HTTP: github.Client()}
+	if latest, err := releases.Latest(context.Background()); err != nil || latest != "v0.3.0" {
+		t.Fatalf("Latest() = %q, %v", latest, err)
+	}
+	tag.Store("v0.3.1")
+	// A check right after the last one answers from the cache.
+	if latest, _ := releases.Check(context.Background()); latest != "v0.3.0" || calls.Load() != 1 {
+		t.Fatalf("immediate Check() = %q after %d calls", latest, calls.Load())
+	}
+	releases.checked = releases.checked.Add(-recheckGap)
+	if latest, err := releases.Check(context.Background()); err != nil || latest != "v0.3.1" {
+		t.Fatalf("Check() = %q, %v", latest, err)
+	}
+	if latest, _ := releases.Latest(context.Background()); latest != "v0.3.1" || calls.Load() != 2 {
+		t.Fatalf("Latest() after Check() = %q after %d calls", latest, calls.Load())
+	}
+}
+
 func TestLatestRejectsATagThatIsNotARelease(t *testing.T) {
 	t.Parallel()
 	github := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

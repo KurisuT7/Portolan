@@ -36,6 +36,7 @@ const (
 const (
 	checkTTL        = time.Hour
 	failedCheckTTL  = 5 * time.Minute
+	recheckGap      = 30 * time.Second
 	staleUpdate     = 30 * time.Minute
 	pendingDeadline = 2 * time.Minute
 )
@@ -67,6 +68,7 @@ type Releases struct {
 	mu      sync.Mutex
 	latest  string
 	err     error
+	checked time.Time
 	expires time.Time
 }
 
@@ -76,11 +78,23 @@ func NewReleases() *Releases {
 
 // Latest returns the tag of the latest stable release, such as v0.3.0.
 func (r *Releases) Latest(ctx context.Context) (string, error) {
+	return r.read(ctx, false)
+}
+
+// Check asks GitHub again instead of answering from the cache, unless it was
+// asked moments ago, so an operator can find a release published since.
+func (r *Releases) Check(ctx context.Context) (string, error) {
+	return r.read(ctx, true)
+}
+
+func (r *Releases) read(ctx context.Context, fresh bool) (string, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	if time.Now().Before(r.expires) {
+	now := time.Now()
+	if now.Before(r.expires) && (!fresh || now.Sub(r.checked) < recheckGap) {
 		return r.latest, r.err
 	}
+	r.checked = now
 	r.latest, r.err = r.fetch(ctx)
 	if r.err != nil {
 		r.expires = time.Now().Add(failedCheckTTL)
