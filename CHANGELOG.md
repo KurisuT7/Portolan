@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-19
+
 ### 新增
 
 - 控制台页脚加了「检查更新」：立即向 GitHub 查询最新版本，不用等每小时一次的自动检查。有新版本时直接打开更新窗口。
@@ -101,7 +103,8 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.2
 [0.3.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.1
 [0.3.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.0
 [0.2.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.2.1
