@@ -55,8 +55,8 @@ and tests over prose; when they disagree, fix the prose in the same change.
 
 ## Commit and release
 
-- Commit ordinary fixes and small features directly to `main`; CI runs on every push to `main`.
-- Use a `feat/…` or `fix/…` branch and pull request for installer, configuration apply and rollback,
-  or protocol and config-generation changes, Linux-only behavior that needs CI before landing, and
+- Commit fixes and small changes directly to `main`, whichever area they touch; CI runs on every push
+  to `main`. Use a `feat/…` or `fix/…` branch and pull request only for large features and
   multi-commit work in progress.
+- After user-visible fixes land and CI passes, publish them as a patch release.
 - Releases are published only by `v*` tags. Tag a release only after CI on that `main` commit passes.
