@@ -20,6 +20,10 @@ import (
 // by the panel; older Agents are updated by running the installer again.
 const agentSelfUpdateSince = "v0.2.0"
 
+// shadowTLSAgentSince is the first Agent release that generates ShadowTLS
+// inbounds.
+const shadowTLSAgentSince = "v0.5.0"
+
 var releasePattern = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)`)
 
 // olderRelease reports whether release a precedes release b. Versions that are

@@ -541,7 +541,7 @@ kbd { padding: 1px 6px; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--li
   background: linear-gradient(180deg, var(--sheen), transparent 50%), var(--card);
   box-shadow: var(--card-shadow);
   overflow: hidden;
-  transition: border-color 0.15s, transform 0.15s;
+  transition: border-color 0.15s, transform 0.15s, box-shadow 0.15s;
 }
 .route-card:hover,
 .server-card:hover { border-color: var(--line-2); }
@@ -587,6 +587,23 @@ kbd { padding: 1px 6px; border-radius: 5px; box-shadow: inset 0 0 0 1px var(--li
 .server-card .card-link { font-size: 16px; }
 .server-card .sub { margin-top: 2px; }
 .server-card .copyable .mono { color: var(--text); font-size: 13px; }
+/* While sorting, the whole card is the drag handle and its content is inert. */
+.sortable,
+.sortable-body { display: grid; min-width: 0; }
+.sortable { position: relative; border-radius: 18px; }
+.sort-grip { position: absolute; top: 2px; left: 50%; z-index: 2; display: flex; color: var(--text-3); opacity: 0; transform: translateX(-50%); pointer-events: none; transition: opacity 0.15s; }
+.is-sorting .sort-grip { opacity: 1; }
+.is-sorting > .sortable { cursor: grab; touch-action: manipulation; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.is-sorting .route-card,
+.is-sorting .server-card { border-color: var(--line-2); }
+.sortable.is-dragging { z-index: 3; cursor: grabbing; }
+.sortable.is-dragging .route-card,
+.sortable.is-dragging .server-card { border-color: var(--line-3); box-shadow: var(--shadow-lg); transform: scale(1.02); }
+@media (hover: hover) {
+  .is-sorting > .sortable:hover .route-card,
+  .is-sorting > .sortable:hover .server-card { border-color: var(--line-3); }
+}
+
 .ptags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .card-traffic { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; color: var(--text-3); font-size: 12.5px; }
 .card-traffic b { color: var(--text); font: 600 13px var(--mono); }

@@ -343,7 +343,11 @@ type Node struct {
 	Reality    *RealitySpec `json:"reality,omitempty"`
 	SS         *SSSpec      `json:"shadowsocks,omitempty"`
 	Snell      *SnellSpec   `json:"snell,omitempty"`
-	CreatedAt  time.Time    `json:"created_at"`
+	// ShadowTLS wraps a Shadowsocks or Snell node: the TCP port completes a
+	// real TLS handshake with HandshakeServer and passes authenticated
+	// connections to the protocol behind it.
+	ShadowTLS *ShadowTLSSpec `json:"shadow_tls,omitempty"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 type RealitySpec struct {
@@ -373,6 +377,14 @@ type SnellSpec struct {
 	ObfsMode      string `json:"obfs_mode,omitempty"`
 	Mode          string `json:"mode,omitempty"`
 	AllowInsecure bool   `json:"allow_insecure,omitempty"`
+}
+
+// ShadowTLSSpec is ShadowTLS v3 in strict mode, so the handshake server must
+// support TLS 1.3. The domain is also the SNI clients send.
+type ShadowTLSSpec struct {
+	Password        string `json:"password"`
+	HandshakeServer string `json:"handshake_server"`
+	HandshakePort   uint16 `json:"handshake_port"`
 }
 
 type ForwardEngine string
@@ -408,6 +420,14 @@ func (n Node) Validate() error {
 	}
 	if n.ListenPort == 0 {
 		return errors.New("listen port must be between 1 and 65535")
+	}
+	if n.ShadowTLS != nil {
+		if n.Protocol != ProtocolShadowsocks && n.Protocol != ProtocolSnell {
+			return errors.New("ShadowTLS can wrap only Shadowsocks and Snell nodes")
+		}
+		if err := n.ShadowTLS.Validate(); err != nil {
+			return err
+		}
 	}
 	switch n.Protocol {
 	case ProtocolReality:
@@ -497,6 +517,19 @@ func (s SnellSpec) Validate() error {
 		if s.Mode == "unsafe-raw" && !s.AllowInsecure {
 			return errors.New("snell unsafe-raw mode requires allow_insecure")
 		}
+	}
+	return nil
+}
+
+func (s ShadowTLSSpec) Validate() error {
+	if strings.TrimSpace(s.Password) == "" {
+		return errors.New("ShadowTLS password is required")
+	}
+	if !validDomain(s.HandshakeServer) {
+		return errors.New("ShadowTLS handshake server must be a valid domain name, not an IP address")
+	}
+	if s.HandshakePort == 0 {
+		return errors.New("ShadowTLS handshake port is required")
 	}
 	return nil
 }

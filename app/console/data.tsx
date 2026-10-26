@@ -3,10 +3,12 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from "react";
 import { ApiError, PortolanApi, type ApiSession } from "../lib/api";
 import type { Fleet, FleetIndex } from "../lib/fleet";
+import { applyOrder } from "../lib/order";
 
 export const api = new PortolanApi();
 
 export type Resource = keyof Fleet;
+export type Sortable = "servers" | "forwards";
 export type ResourceErrors = Partial<Record<Resource, string>>;
 
 const resources: Resource[] = ["servers", "nodes", "forwards", "probes", "config", "cores", "traffic"];
@@ -40,6 +42,9 @@ export function useConsole() {
   const [fetchedAt, setFetchedAt] = useState(0);
   const [syncedAt, setSyncedAt] = useState(0);
   const inflight = useRef<AbortController | null>(null);
+  // Orders not yet confirmed by the panel win over a refresh that read the previous one.
+  const pendingOrder = useRef<Partial<Record<Sortable, string[]>>>({});
+  const saving = useRef<Promise<unknown>>(Promise.resolve());
 
   const clear = useCallback(() => {
     setData(empty);
@@ -74,6 +79,9 @@ export function useConsole() {
         failures[key] = errorText(result.reason);
       }
     });
+    for (const [key, ids] of Object.entries(pendingOrder.current) as [Sortable, string[]][]) {
+      if (loaded[key]) Object.assign(loaded, { [key]: applyOrder<{ id: string }>(loaded[key], ids) });
+    }
     setData((previous) => ({ ...previous, ...loaded }));
     setErrors(failures);
     setLastSuccess((previous) => ({ ...previous, ...succeeded }));
@@ -81,6 +89,22 @@ export function useConsole() {
     if (!Object.keys(failures).length) setSyncedAt(now);
     return true;
   }, [clear]);
+
+  // Shows the new order at once and saves orders one at a time, so the last arrangement is the one kept.
+  const reorder = useCallback(async (collection: Sortable, ids: string[]) => {
+    pendingOrder.current[collection] = ids;
+    setData((previous) => ({ ...previous, [collection]: applyOrder<{ id: string }>(previous[collection], ids) }));
+    const save = saving.current.then(() => api.reorder(collection, ids));
+    saving.current = save.catch(() => undefined);
+    try {
+      await save;
+    } finally {
+      if (pendingOrder.current[collection] === ids) {
+        delete pendingOrder.current[collection];
+        await refresh();
+      }
+    }
+  }, [refresh]);
 
   const connect = useCallback(async (signal?: AbortSignal) => {
     try {
@@ -137,7 +161,7 @@ export function useConsole() {
     setInfo(await api.session());
   }
 
-  return { data, errors, lastSuccess, session, info, connectionError, refreshing, fetchedAt, syncedAt, refresh, connect, login, logout, reloadSession };
+  return { data, errors, lastSuccess, session, info, connectionError, refreshing, fetchedAt, syncedAt, refresh, reorder, connect, login, logout, reloadSession };
 }
 
 export type ConsoleControl = ReturnType<typeof useConsole>;
@@ -148,6 +172,7 @@ export type FleetContextValue = {
   errors: ResourceErrors;
   now: number;
   refresh: () => Promise<boolean>;
+  reorder: (collection: Sortable, ids: string[]) => Promise<void>;
   // Version of the running panel.
   version: string;
   // Version of the Agent this panel installs, compared with the version each Agent reports.

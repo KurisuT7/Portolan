@@ -132,14 +132,3 @@ export function fleetSummary(fleet: Fleet, index: FleetIndex, now: number) {
     healthy: routes.filter((route) => route.tone === "good").length,
   };
 }
-
-const severity = { bad: 0, warn: 1, good: 2, neutral: 3 } as const;
-
-// Problems first, then healthy routes, then unmeasured and disabled ones.
-export function sortRoutes(forwards: ApiForward[], index: FleetIndex, now: number) {
-  const rank = (forward: ApiForward) => {
-    const state = routeState(forward, index, false, now);
-    return severity[state.tone] * 3 + (forward.enabled ? 0 : 2) + (forward.networks.includes("tcp") ? 0 : 1);
-  };
-  return [...forwards].sort((left, right) => rank(left) - rank(right));
-}

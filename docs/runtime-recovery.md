@@ -16,6 +16,7 @@
 - Reality UUID、私钥、Short ID、SNI、握手目标、flow；
 - Shadowsocks method/password；
 - Snell version/PSK/mode；
+- ShadowTLS 密码、握手域名和端口；
 - sing-box/Realm 转发网络、目标地址和端口。
 
 下列字段没有完整写入服务器上的配置，必须在恢复清单里明确提供，程序不会猜默认值：

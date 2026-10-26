@@ -43,6 +43,37 @@ export type ApiNode = {
   profile: string;
 };
 
+// The settings of a node without its credentials.
+export type ApiNodeSettings = {
+  id: string;
+  server_id: string;
+  protocol: ApiNode["protocol"];
+  managed: boolean;
+  name: string;
+  listen_port: number;
+  reality?: {
+    flow: string;
+    handshake_server: string;
+    handshake_port: number;
+    server_name: string;
+    fingerprint: string;
+    transport: string;
+    transport_settings?: Record<string, string>;
+    max_time_difference?: string;
+  };
+  shadowsocks?: { method: string; allow_insecure: boolean };
+  snell?: { version: 5 | 6; obfs_mode?: string; mode?: string; allow_insecure: boolean };
+  shadow_tls?: { handshake_server: string; handshake_port: number };
+};
+
+export type SavedNode = {
+  id: string;
+  client: ClientExport;
+  export_pending?: boolean;
+  // Set when an update changed the node; absent after a save without changes.
+  updated_at?: string;
+};
+
 export type ApiForward = {
   id: string;
   ingress_server_id: string;
@@ -381,13 +412,19 @@ export class PortolanApi {
   }
 
   async createNode(payload: Record<string, unknown>) {
-    return this.request<{
-      id: string;
-      client: ClientExport;
-      export_pending?: boolean;
-    }>("/api/v1/nodes", {
+    return this.request<SavedNode>("/api/v1/nodes", {
       method: "POST",
       body: JSON.stringify(payload),
+    });
+  }
+
+  async getNode(id: string) {
+    return this.request<ApiNodeSettings>(`/api/v1/nodes/${encodeURIComponent(id)}`);
+  }
+
+  async updateNode(id: string, payload: Record<string, unknown>) {
+    return this.request<SavedNode>(`/api/v1/nodes/${encodeURIComponent(id)}`, {
+      method: "PUT", body: JSON.stringify(payload),
     });
   }
 
@@ -451,6 +488,11 @@ export class PortolanApi {
       `/api/v1/servers/${encodeURIComponent(id)}`,
       { method: "PATCH", body: JSON.stringify(payload) },
     );
+  }
+
+  // ids lists every item of the collection once, in the order to show them.
+  async reorder(collection: "servers" | "forwards", ids: string[]) {
+    await this.request<void>(`/api/v1/${collection}/order`, { method: "PUT", body: JSON.stringify({ ids }) });
   }
 
   async deleteServer(id: string) {

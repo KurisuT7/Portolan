@@ -115,12 +115,16 @@ type singInbound struct {
 	Network         []string        `json:"network,omitempty"`
 	OverrideAddress string          `json:"override_address,omitempty"`
 	OverridePort    uint16          `json:"override_port,omitempty"`
+	Handshake       *singHandshake  `json:"handshake,omitempty"`
+	StrictMode      bool            `json:"strict_mode,omitempty"`
+	Detour          string          `json:"detour,omitempty"`
 }
 
 type singUser struct {
-	Name string `json:"name"`
-	UUID string `json:"uuid"`
-	Flow string `json:"flow,omitempty"`
+	Name     string `json:"name"`
+	UUID     string `json:"uuid"`
+	Flow     string `json:"flow,omitempty"`
+	Password string `json:"password,omitempty"`
 }
 
 type singTLS struct {
@@ -446,14 +450,23 @@ func parseNode(path, id, serverID string, metadata NodeMetadata) (model.Node, st
 	if metadata.Name == nil || strings.TrimSpace(*metadata.Name) == "" || metadata.Profile == nil || strings.TrimSpace(*metadata.Profile) == "" {
 		return model.Node{}, "", fmt.Errorf("node %s requires explicit non-empty name and profile metadata", id)
 	}
-	inbound, err := loadInbound(path)
+	inbounds, err := loadInbounds(path)
 	if err != nil {
 		return model.Node{}, "", fmt.Errorf("node %s: %w", id, err)
 	}
+	inbound := inbounds[0]
 	if inbound.Tag != "node-"+id || inbound.Listen != "::" || inbound.ListenPort == 0 {
 		return model.Node{}, "", fmt.Errorf("node %s tag or listener does not match its runtime filename", id)
 	}
 	node := model.Node{ID: id, ServerID: serverID, Name: *metadata.Name, ListenPort: inbound.ListenPort, Enabled: true, Managed: true}
+	if inbound.Type == "shadowtls" {
+		node.ShadowTLS, inbound, err = parseShadowTLS(id, inbounds)
+		if err != nil {
+			return model.Node{}, "", err
+		}
+	} else if len(inbounds) != 1 {
+		return model.Node{}, "", fmt.Errorf("node %s fragment must contain exactly one inbound", id)
+	}
 	switch inbound.Type {
 	case "vless":
 		node.Protocol = model.ProtocolReality
@@ -532,11 +545,30 @@ func parseNode(path, id, serverID string, metadata NodeMetadata) (model.Node, st
 	return node, *metadata.Profile, nil
 }
 
+// parseShadowTLS reads the ShadowTLS wrapper of a node and returns the
+// protocol inbound it passes connections to.
+func parseShadowTLS(id string, inbounds []singInbound) (*model.ShadowTLSSpec, singInbound, error) {
+	if len(inbounds) != 2 {
+		return nil, singInbound{}, fmt.Errorf("node %s ShadowTLS fragment must contain the wrapper and one protocol inbound", id)
+	}
+	wrapper, inner := inbounds[0], inbounds[1]
+	if wrapper.Version != 3 || !wrapper.StrictMode || len(wrapper.Users) != 1 || wrapper.Handshake == nil ||
+		wrapper.Detour != "node-"+id+"-inner" || inner.Tag != wrapper.Detour {
+		return nil, singInbound{}, fmt.Errorf("node %s ShadowTLS runtime is incomplete", id)
+	}
+	spec := &model.ShadowTLSSpec{Password: wrapper.Users[0].Password, HandshakeServer: wrapper.Handshake.Server, HandshakePort: wrapper.Handshake.ServerPort}
+	return spec, inner, nil
+}
+
 func parseSingForward(path, id, serverID string, metadata ForwardMetadata) (model.Forward, error) {
-	inbound, err := loadInbound(path)
+	inbounds, err := loadInbounds(path)
 	if err != nil {
 		return model.Forward{}, fmt.Errorf("forward %s: %w", id, err)
 	}
+	if len(inbounds) != 1 {
+		return model.Forward{}, fmt.Errorf("forward %s fragment must contain exactly one inbound", id)
+	}
+	inbound := inbounds[0]
 	if inbound.Type != "direct" || inbound.Tag != "forward-"+id || inbound.Listen != "::" {
 		return model.Forward{}, fmt.Errorf("forward %s runtime identity is invalid", id)
 	}
@@ -639,19 +671,19 @@ func finishForward(id, serverID string, listenPort uint16, networks []string, ta
 	return forward, nil
 }
 
-func loadInbound(path string) (singInbound, error) {
+func loadInbounds(path string) ([]singInbound, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return singInbound{}, err
+		return nil, err
 	}
 	var fragment singFragment
 	if err := decodeStrict(data, &fragment); err != nil {
-		return singInbound{}, err
+		return nil, err
 	}
-	if len(fragment.Inbounds) != 1 {
-		return singInbound{}, errors.New("fragment must contain exactly one inbound")
+	if len(fragment.Inbounds) == 0 {
+		return nil, errors.New("fragment contains no inbound")
 	}
-	return fragment.Inbounds[0], nil
+	return fragment.Inbounds, nil
 }
 
 func loadAgentIdentity(path string) (agentIdentity, error) {

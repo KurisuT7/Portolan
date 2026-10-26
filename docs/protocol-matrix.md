@@ -44,6 +44,16 @@ Snell 使用 sing-box 官方 [Snell 入站](https://sing-box.sagernet.org/config
 
 Snell 入站自 sing-box 1.14.0 正式版提供，与 Reality、Shadowsocks 使用同一个核心；面板只允许把 sing-box 设为 1.14.0 及以上的正式版。sing-box 不实现 Snell v5 的 QUIC Proxy 模式。
 
+## ShadowTLS
+
+Shadowsocks 和 Snell 节点可以在创建时套一层 sing-box 官方 [ShadowTLS 入站](https://sing-box.sagernet.org/configuration/inbound/shadowtls/)：
+
+- 只用 v3，并开启 `strict_mode`，握手服务器必须支持 TLS 1.3。握手域名同时是客户端发送的 SNI，必须是域名而非 IP；默认 `aws.amazon.com:443`。
+- 节点端口的 TCP 由 ShadowTLS 监听，认证通过的连接交给内层协议入站（`detour`）。Shadowsocks 的 UDP 仍监听同一端口，客户端默认把 UDP 发到这里；Snell 没有 UDP 监听，内层入站只占用一个本机回环端口。
+- 密码随机生成。
+- 导出：Shadowsocks 在 SIP002 链接里写 `plugin=shadow-tls;host=<握手域名>;password=<密码>;version=3`；Snell 的 Surge 配置行追加 `shadow-tls-password`、`shadow-tls-sni` 和 `shadow-tls-version=3`（参见 [Surge Shadow TLS 参数](https://manual.nssurge.com/policies/tls.html)）。
+- 旧版 Agent 不认识这一层，会只部署内层协议，所以面板拒绝在 Agent 早于 v0.5.0 的服务器上创建这类节点。
+
 ## 增加协议方法
 
 协议方法和生成逻辑集中在 `internal/model` 与 `internal/configgen`，UI 只提交声明式规格。模型描述 sing-box 能表达、外部节点可能使用的配置；只针对 Portolan 新建节点的限制（如 Reality 传输）在 `internal/api` 的创建入口校验。增加新方法时必须同时更新：

@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS servers (
   region TEXT NOT NULL DEFAULT '',
   nat_ports TEXT NOT NULL DEFAULT '[]',
   traffic_reset_day INTEGER NOT NULL DEFAULT 1,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   agent_status TEXT NOT NULL DEFAULT 'pending',
   enroll_token_hash TEXT,
   enroll_expires_at TEXT,
@@ -47,6 +48,7 @@ CREATE TABLE IF NOT EXISTS forwards (
   listen_port INTEGER NOT NULL,
   engine TEXT NOT NULL,
   spec_json TEXT NOT NULL,
+  sort_order INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   UNIQUE(ingress_server_id, listen_port)
 );
@@ -149,6 +151,8 @@ CREATE TABLE IF NOT EXISTS traffic_reports (
 		{table: "servers", name: "egress_ipv6", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "servers", name: "traffic_reset_day", definition: "INTEGER NOT NULL DEFAULT 1"},
 		{table: "servers", name: "nat_ports", definition: "TEXT NOT NULL DEFAULT '[]'"},
+		{table: "servers", name: "sort_order", definition: "INTEGER NOT NULL DEFAULT 0"},
+		{table: "forwards", name: "sort_order", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "jobs", name: "revision", definition: "INTEGER NOT NULL DEFAULT 0"},
 		{table: "agent_runtime", name: "agent_version", definition: "TEXT NOT NULL DEFAULT ''"},
 	} {

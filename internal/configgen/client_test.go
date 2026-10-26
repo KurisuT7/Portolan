@@ -82,3 +82,27 @@ func TestSnellExportUsesSurgeParameters(t *testing.T) {
 		})
 	}
 }
+
+func TestShadowTLSExports(t *testing.T) {
+	stls := &model.ShadowTLSSpec{Password: "stls-Password_1", HandshakeServer: "aws.amazon.com", HandshakePort: 443}
+	ss := model.Node{ID: "ss", Name: "ss", Protocol: model.ProtocolShadowsocks, ListenPort: 443, ShadowTLS: stls,
+		SS: &model.SSSpec{Method: "aes-256-gcm", Password: "secret"}}
+	export, err := ExportClient(ss, PublishedEndpoint{Address: "203.0.113.9", Port: 443, Name: "edge"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "ss://YWVzLTI1Ni1nY206c2VjcmV0@203.0.113.9:443/?plugin=shadow-tls%3Bhost%3Daws.amazon.com%3Bpassword%3Dstls-Password_1%3Bversion%3D3#edge"
+	if export.URI != want {
+		t.Fatalf("ShadowTLS link = %s, want %s", export.URI, want)
+	}
+
+	snell := model.Node{ID: "snell", Name: "Snell", Protocol: model.ProtocolSnell, ListenPort: 443, ShadowTLS: stls,
+		Snell: &model.SnellSpec{Version: 5, PSK: "correct-horse-battery"}}
+	export, err = ExportClient(snell, PublishedEndpoint{Address: "203.0.113.9", Port: 443, Name: "Snell"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if export.SurgeLine != "Snell = snell, 203.0.113.9, 443, psk=correct-horse-battery, version=5, shadow-tls-password=stls-Password_1, shadow-tls-sni=aws.amazon.com, shadow-tls-version=3" {
+		t.Fatalf("Surge line = %q", export.SurgeLine)
+	}
+}

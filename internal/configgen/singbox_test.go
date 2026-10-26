@@ -3,6 +3,7 @@ package configgen
 import (
 	"encoding/base64"
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -75,6 +76,61 @@ func TestSnellV5AndV6RenderVersionSpecificFields(t *testing.T) {
 			}
 			assertJSONContains(t, data, `"type": "snell"`, test.want)
 		})
+	}
+}
+
+func TestShadowTLSWrapsShadowsocksAndSnell(t *testing.T) {
+	stls := &model.ShadowTLSSpec{Password: "stls-password", HandshakeServer: "aws.amazon.com", HandshakePort: 443}
+	for _, node := range []model.Node{
+		{ID: "ss", Name: "SS", Protocol: model.ProtocolShadowsocks, ListenPort: 21004, ShadowTLS: stls,
+			SS: &model.SSSpec{Method: "2022-blake3-aes-128-gcm", Password: "8JCsPssfgS8tiRwiMlhARg=="}},
+		{ID: "snell", Name: "Snell", Protocol: model.ProtocolSnell, ListenPort: 21005, ShadowTLS: stls,
+			Snell: &model.SnellSpec{Version: 6, PSK: "correct-horse-battery"}},
+	} {
+		t.Run(node.ID, func(t *testing.T) {
+			data, err := NodeFragment(node)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var fragment struct {
+				Inbounds []map[string]any `json:"inbounds"`
+			}
+			if err := json.Unmarshal(data, &fragment); err != nil || len(fragment.Inbounds) != 2 {
+				t.Fatalf("expected a ShadowTLS and a protocol inbound: %s", data)
+			}
+			wrapper, inner := fragment.Inbounds[0], fragment.Inbounds[1]
+			if wrapper["type"] != "shadowtls" || wrapper["tag"] != "node-"+node.ID || wrapper["listen"] != "::" ||
+				wrapper["listen_port"] != float64(node.ListenPort) || wrapper["version"] != float64(3) || wrapper["strict_mode"] != true ||
+				wrapper["detour"] != inner["tag"] || inner["tag"] != "node-"+node.ID+"-inner" || inner["type"] != string(node.Protocol) {
+				t.Fatalf("unexpected ShadowTLS wiring: %s", data)
+			}
+			assertJSONContains(t, data, `"password": "stls-password"`, `"server": "aws.amazon.com"`, `"server_port": 443`)
+			if node.Protocol == model.ProtocolShadowsocks {
+				// Shadowsocks UDP stays on the node's port; TCP arrives only through ShadowTLS.
+				if inner["listen"] != "::" || inner["listen_port"] != float64(node.ListenPort) || !reflect.DeepEqual(inner["network"], []any{"udp"}) {
+					t.Fatalf("Shadowsocks behind ShadowTLS should listen only on UDP: %s", data)
+				}
+			} else if _, public := inner["listen_port"]; public || inner["listen"] != "127.0.0.1" {
+				t.Fatalf("Snell behind ShadowTLS must not listen publicly: %s", data)
+			}
+		})
+	}
+	reality := model.Node{ID: "reality", Name: "Reality", Protocol: model.ProtocolReality, ListenPort: 21006, ShadowTLS: stls,
+		Reality: &model.RealitySpec{UUID: "6d1f0d6e-2f1c-4c55-9b5f-6a0c1e7b8f10", HandshakeServer: "aws.amazon.com", HandshakePort: 443,
+			ServerName: "aws.amazon.com", PrivateKey: "private", PublicKey: "public", ShortIDs: []string{"01"}, Fingerprint: "chrome"}}
+	if _, err := NodeFragment(reality); err == nil {
+		t.Fatal("ShadowTLS must not wrap Reality")
+	}
+	for _, spec := range []model.ShadowTLSSpec{
+		{HandshakeServer: "aws.amazon.com", HandshakePort: 443},
+		{Password: "x", HandshakeServer: "192.0.2.1", HandshakePort: 443},
+		{Password: "x", HandshakeServer: "aws.amazon.com"},
+	} {
+		node := model.Node{ID: "ss", Name: "SS", Protocol: model.ProtocolShadowsocks, ListenPort: 21007, ShadowTLS: &spec,
+			SS: &model.SSSpec{Method: "aes-128-gcm", Password: "secret"}}
+		if _, err := NodeFragment(node); err == nil {
+			t.Fatalf("incomplete ShadowTLS settings were accepted: %+v", spec)
+		}
 	}
 }
 

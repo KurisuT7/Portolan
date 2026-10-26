@@ -1,11 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -72,6 +74,94 @@ func (s *Store) CreateNode(ctx context.Context, node model.Node, profile string)
 		return model.Node{}, err
 	}
 	return node, s.commitSync(ctx, tx, node.ServerID)
+}
+
+// UpdateNode replaces the name, port and protocol settings of a managed node
+// without changing its identity. Forwards that lead to the node follow a port
+// change, and every affected server receives a sync in the same transaction.
+// The returned time is zero when nothing changed.
+func (s *Store) UpdateNode(ctx context.Context, node model.Node, profile string) (model.Node, time.Time, error) {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.Node{}, time.Time{}, err
+	}
+	defer tx.Rollback()
+	var serverID, sealed, previousProfile string
+	var managed bool
+	if err := tx.QueryRowContext(ctx, `SELECT server_id,managed,sealed_spec,profile FROM nodes WHERE id=?`, node.ID).
+		Scan(&serverID, &managed, &sealed, &previousProfile); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.Node{}, time.Time{}, ErrNotFound
+		}
+		return model.Node{}, time.Time{}, err
+	}
+	if !managed {
+		return model.Node{}, time.Time{}, ErrReadOnly
+	}
+	previous, err := s.openNode(node.ID, sealed)
+	if err != nil {
+		return model.Node{}, time.Time{}, err
+	}
+	server, err := s.getServerFrom(ctx, tx, serverID)
+	if err != nil {
+		return model.Node{}, time.Time{}, err
+	}
+	node.ServerID, node.Enabled, node.CreatedAt = serverID, previous.Enabled, previous.CreatedAt
+	node.Managed, node.Source, node.LastSeenAt = true, "", previous.LastSeenAt
+	if node.ListenPort == 0 {
+		port, err := availablePortFrom(ctx, tx, server, "")
+		if err != nil {
+			return model.Node{}, time.Time{}, err
+		}
+		node.ListenPort = port
+	} else if !server.MapsHostPort(node.ListenPort) {
+		return model.Node{}, time.Time{}, fmt.Errorf("%w: 端口 %d 不在 %s 的端口映射内（%s）", ErrInvalidInput, node.ListenPort, server.Name, server.HostPortRanges())
+	}
+	if err := node.Validate(); err != nil {
+		return model.Node{}, time.Time{}, fmt.Errorf("%w: %v", ErrInvalidInput, err)
+	}
+	var used int
+	if err := tx.QueryRowContext(ctx, `SELECT
+		(SELECT COUNT(*) FROM nodes WHERE server_id=? AND listen_port=? AND id<>?) +
+		(SELECT COUNT(*) FROM forwards WHERE ingress_server_id=? AND listen_port=?)`,
+		serverID, node.ListenPort, node.ID, serverID, node.ListenPort).Scan(&used); err != nil {
+		return model.Node{}, time.Time{}, err
+	}
+	if used > 0 {
+		return model.Node{}, time.Time{}, fmt.Errorf("%w: 监听端口 %d 已被节点或转发占用", ErrConflict, node.ListenPort)
+	}
+	before, err := json.Marshal(previous)
+	if err != nil {
+		return model.Node{}, time.Time{}, err
+	}
+	after, err := json.Marshal(node)
+	if err != nil {
+		return model.Node{}, time.Time{}, err
+	}
+	if bytes.Equal(before, after) && profile == previousProfile {
+		return previous, time.Time{}, tx.Commit()
+	}
+	sealed, err = s.vault.Seal(after, "node:"+node.ID)
+	if err != nil {
+		return model.Node{}, time.Time{}, err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE nodes SET name=?,listen_port=?,profile=?,sealed_spec=? WHERE id=?`,
+		node.Name, node.ListenPort, profile, sealed, node.ID); err != nil {
+		return model.Node{}, time.Time{}, err
+	}
+	updatedAt := time.Now().UTC()
+	// Forwards to the node dial its new port; their ingress servers are synced here.
+	ingress, err := s.rerouteForwardsTx(ctx, tx, serverID, false)
+	if err != nil {
+		return model.Node{}, time.Time{}, err
+	}
+	if !slices.Contains(ingress, serverID) {
+		if err := s.enqueueSyncTx(ctx, tx, serverID); err != nil {
+			return model.Node{}, time.Time{}, err
+		}
+		ingress = append(ingress, serverID)
+	}
+	return node, updatedAt, s.commitAndNotify(tx, ingress)
 }
 
 func (s *Store) ListNodes(ctx context.Context) ([]NodeSummary, error) {

@@ -1,13 +1,14 @@
 "use client";
 
 import { Fragment, useState, type FormEvent } from "react";
-import { ArrowRight, Check, Link2, Plus } from "lucide-react";
+import { ArrowRight, ArrowUpDown, Check, Link2, Plus } from "lucide-react";
 import { ApiError, type ApiForward, type ForwardInput } from "../lib/api";
 import { displayPort, serverEndpoint } from "../lib/endpoints";
-import { forwardTarget, regionParts, routeState, sortRoutes } from "../lib/fleet";
+import { forwardTarget, regionParts, routeState } from "../lib/fleet";
 import { byteLength, milliseconds, percent } from "../lib/format";
 import { natPortHint } from "../lib/nat";
 import { formatNodeOption, groupNodesByServer } from "../lib/nodes";
+import { moveWithin } from "../lib/order";
 import { routeHref } from "../lib/routing";
 import { configurationState } from "../lib/status";
 import { cycleWord, formatBytes, portsCounted, totalBytes, trafficOf } from "../lib/traffic";
@@ -15,7 +16,8 @@ import { api, errorText, useFleet } from "./data";
 import { useHistory } from "./history";
 import { navigate } from "./hooks";
 import { useNodeLink } from "./nodes";
-import { Address, Badge, CopyButton, Dialog, Empty, ErrorText, Field, PageHeader, SearchInput, Segmented, Sparkline, Spinner, Status, type Tone } from "./ui";
+import { SortableGrid } from "./sortable";
+import { Address, Badge, CopyButton, Dialog, Empty, ErrorText, Field, PageHeader, SearchInput, Segmented, Sparkline, Spinner, Status, toast, type Tone } from "./ui";
 
 export const engineLabels: Record<ApiForward["engine"], string> = { "sing-box": "sing-box", realm: "Realm" };
 
@@ -31,9 +33,10 @@ export function probeBadge(tone: Tone, label: string) {
 }
 
 export function ForwardsPage({ server }: { server?: string }) {
-  const { data, errors, index } = useFleet();
+  const { data, errors, index, reorder } = useFleet();
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
+  const [sorting, setSorting] = useState(false);
   const needle = query.trim().toLowerCase();
   const rows = data.forwards.filter((forward) => {
     if (server && forward.ingress_server_id !== server) return false;
@@ -42,16 +45,27 @@ export function ForwardsPage({ server }: { server?: string }) {
     return text.toLowerCase().includes(needle);
   });
   const disabled = data.forwards.filter((forward) => !forward.enabled).length;
+  function move(active: string, over: string) {
+    const order = moveWithin(data.forwards.map((forward) => forward.id), rows.map((forward) => forward.id), active, over);
+    reorder("forwards", order).catch((failure) => toast(errorText(failure), "bad"));
+  }
   return (
     <>
       <PageHeader
         title="转发"
         meta={errors.forwards ? "转发数据未更新" : `${data.forwards.length} 条${disabled ? ` · ${disabled} 条已停用` : ""}`}
-        actions={
-          <button className="btn btn-primary" disabled={!data.servers.length || !!(errors.forwards || errors.servers || errors.nodes)} onClick={() => setCreating(true)}>
-            <Plus size={16} />添加转发
-          </button>
-        }
+        actions={sorting ? (
+          <button className="btn btn-primary" onClick={() => setSorting(false)}><Check size={16} />完成</button>
+        ) : (
+          <>
+            <button className="btn" disabled={!!errors.forwards || data.forwards.length < 2} onClick={() => setSorting(true)}>
+              <ArrowUpDown size={16} />排序
+            </button>
+            <button className="btn btn-primary" disabled={!data.servers.length || !!(errors.forwards || errors.servers || errors.nodes)} onClick={() => setCreating(true)}>
+              <Plus size={16} />添加转发
+            </button>
+          </>
+        )}
       />
       <div className="toolbar">
         <SearchInput value={query} onChange={setQuery} placeholder="搜索名称、服务器、地址或端口" />
@@ -60,7 +74,7 @@ export function ForwardsPage({ server }: { server?: string }) {
           {data.servers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
         </select>
       </div>
-      {rows.length ? <RouteGrid forwards={rows} /> : (
+      {rows.length ? <RouteGrid forwards={rows} sorting={sorting} onMove={move} /> : (
         <Empty>{errors.forwards ? "暂时无法读取转发。" : needle || server ? "没有匹配的转发" : "转发把入口服务器的端口连到目标节点或任意地址。"}</Empty>
       )}
       {creating && <ForwardForm ingressId={server} onClose={() => setCreating(false)} />}
@@ -68,14 +82,18 @@ export function ForwardsPage({ server }: { server?: string }) {
   );
 }
 
-export function RouteGrid({ forwards }: { forwards: ApiForward[] }) {
-  const { index, now } = useFleet();
+// onMove makes the grid sortable; cards move while sorting is on.
+export function RouteGrid({ forwards, sorting = false, onMove }: { forwards: ApiForward[]; sorting?: boolean; onMove?: (active: string, over: string) => void }) {
   const link = useNodeLink();
   return (
     <>
-      <div className="route-grid">
-        {sortRoutes(forwards, index, now).map((forward) => <RouteCard key={forward.id} forward={forward} link={link} />)}
-      </div>
+      {onMove ? (
+        <SortableGrid className="route-grid" items={forwards} sorting={sorting} onMove={onMove}>
+          {(forward) => <RouteCard forward={forward} link={link} />}
+        </SortableGrid>
+      ) : (
+        <div className="route-grid">{forwards.map((forward) => <RouteCard key={forward.id} forward={forward} link={link} />)}</div>
+      )}
       {link.dialog}
     </>
   );

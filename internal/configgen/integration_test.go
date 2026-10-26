@@ -72,6 +72,13 @@ func TestGeneratedFragmentsPassSingBoxCheck(t *testing.T) {
 	writeNodeFixture(t, confDir, model.Node{ID: "snell_6", Name: "Snell 6", Protocol: model.ProtocolSnell, ListenPort: port, Enabled: true,
 		Snell: &model.SnellSpec{Version: 6, PSK: "correct-horse-battery", Mode: "default"}})
 	port++
+	stls := &model.ShadowTLSSpec{Password: "shadow-tls-password", HandshakeServer: "aws.amazon.com", HandshakePort: 443}
+	writeNodeFixture(t, confDir, model.Node{ID: "ss_shadowtls", Name: "SS ShadowTLS", Protocol: model.ProtocolShadowsocks, ListenPort: port, Enabled: true,
+		SS: &model.SSSpec{Method: "2022-blake3-aes-128-gcm", Password: "8JCsPssfgS8tiRwiMlhARg=="}, ShadowTLS: stls})
+	port++
+	writeNodeFixture(t, confDir, model.Node{ID: "snell_shadowtls", Name: "Snell ShadowTLS", Protocol: model.ProtocolSnell, ListenPort: port, Enabled: true,
+		Snell: &model.SnellSpec{Version: 5, PSK: "correct-horse-battery"}, ShadowTLS: stls})
+	port++
 	forward, err := ForwardFragment(model.Forward{ID: "forward", Name: "forward", ListenPort: port, Networks: []string{"tcp", "udp"},
 		TargetHost: "[2001:0db8::20]", TargetPort: 443, Engine: model.ForwardSingBox, Enabled: true})
 	if err != nil {

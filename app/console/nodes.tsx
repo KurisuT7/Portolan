@@ -1,13 +1,13 @@
 "use client";
 
 import { Fragment, useState, type FormEvent, type ReactNode } from "react";
-import { Check, Link2, Plus, Trash2 } from "lucide-react";
-import { ApiError, type ApiForward, type ApiNode, type ClientExport } from "../lib/api";
+import { Check, Link2, Pencil, Plus, Trash2 } from "lucide-react";
+import { ApiError, type ApiForward, type ApiNode, type ApiNodeSettings, type ClientExport, type SavedNode } from "../lib/api";
 import { displayPort, publicPort, serverHost } from "../lib/endpoints";
 import { regionParts } from "../lib/fleet";
 import { byteLength } from "../lib/format";
 import { natPortHint } from "../lib/nat";
-import { displayNodeProfile, groupNodesByServer, protocolLabels } from "../lib/nodes";
+import { displayNodeProfile, groupNodesByServer, nodeFormValues, protocolLabels } from "../lib/nodes";
 import { routeHref } from "../lib/routing";
 import { configurationState, serverState, singBoxUnit, unitState } from "../lib/status";
 import { cycleWord, formatBytes, portsCounted, totalBytes, trafficOf } from "../lib/traffic";
@@ -113,6 +113,18 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
   const { data, errors, index, now, refresh } = useFleet();
   const link = useNodeLink();
   const [removing, setRemoving] = useState<ApiNode | null>(null);
+  const [editing, setEditing] = useState<ApiNodeSettings | null>(null);
+  const [opening, setOpening] = useState("");
+  async function edit(node: ApiNode) {
+    setOpening(node.id);
+    try {
+      setEditing(await api.getNode(node.id));
+    } catch (failure) {
+      toast(errorText(failure), "bad");
+    } finally {
+      setOpening("");
+    }
+  }
   const groups = grouped ? groupNodesByServer(nodes, data.servers) : [{ serverId: "", serverName: "", nodes }];
   const dependents = (node: ApiNode) => data.forwards.filter((forward) => forward.target_node_id === node.id).length;
   return (
@@ -163,6 +175,11 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
                           {link.copied === node.id ? "已复制" : "复制链接"}
                         </button>
                         {node.managed && (
+                          <button className="icon-btn" disabled={!!errors.nodes || !!opening} aria-label={`编辑 ${node.name}`} title="编辑" onClick={() => void edit(node)}>
+                            {opening === node.id ? <Spinner size={15} /> : <Pencil size={15} />}
+                          </button>
+                        )}
+                        {node.managed && (
                           <button className="icon-btn icon-btn-danger" disabled={!!errors.nodes} aria-label={`删除 ${node.name}`} title="删除" onClick={() => setRemoving(node)}>
                             <Trash2 size={15} />
                           </button>
@@ -177,6 +194,7 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
         })}
       </div>
       {link.dialog}
+      {editing && <NodeForm initial={editing} onClose={() => setEditing(null)} />}
       {removing && (
         <ConfirmDelete
           title="删除节点"
@@ -197,30 +215,40 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
 
 type Created = { id: string; protocol: Protocol; name: string; client: ClientExport };
 
-export function NodeForm({ serverId: initialServer, onClose }: { serverId?: string; onClose: () => void }) {
-  const { data, refresh } = useFleet();
-  const [serverId, setServerId] = useState(initialServer || data.servers[0]?.id || "");
-  const [selected, setSelected] = useState<Protocol[]>(["vless-reality"]);
-  const [name, setName] = useState("");
-  const [port, setPort] = useState("");
-  const [handshake, setHandshake] = useState("aws.amazon.com");
-  const [handshakePort, setHandshakePort] = useState("443");
-  const [transport, setTransport] = useState("tcp");
-  const [flow, setFlow] = useState("xtls-rprx-vision");
-  const [serviceName, setServiceName] = useState("");
-  const [method, setMethod] = useState("2022-blake3-aes-256-gcm");
-  const [snellVersion, setSnellVersion] = useState<5 | 6>(6);
-  const [snellMode, setSnellMode] = useState("default");
-  const [allowUnsafe, setAllowUnsafe] = useState(false);
+// With initial the form edits that node; otherwise it creates one node per selected protocol.
+export function NodeForm({ serverId: initialServer, initial, onClose }: { serverId?: string; initial?: ApiNodeSettings; onClose: () => void }) {
+  const { data, errors, index, now, refresh } = useFleet();
+  const start = nodeFormValues(initial);
+  const [serverId, setServerId] = useState(initial?.server_id || initialServer || data.servers[0]?.id || "");
+  const [selected, setSelected] = useState<Protocol[]>([start.protocol]);
+  const [name, setName] = useState(start.name);
+  const [port, setPort] = useState(start.port);
+  const [handshake, setHandshake] = useState(start.handshake);
+  const [handshakePort, setHandshakePort] = useState(start.handshakePort);
+  const [transport, setTransport] = useState(start.transport);
+  const [flow, setFlow] = useState(start.flow);
+  const [serviceName, setServiceName] = useState(start.serviceName);
+  const [method, setMethod] = useState(start.method);
+  const [snellVersion, setSnellVersion] = useState<5 | 6>(start.snellVersion);
+  const [snellMode, setSnellMode] = useState(start.snellMode);
+  const [shadowTLS, setShadowTLS] = useState(start.shadowTLS);
+  const [shadowTLSServer, setShadowTLSServer] = useState(start.shadowTLSServer);
+  const [shadowTLSPort, setShadowTLSPort] = useState(start.shadowTLSPort);
+  const [allowUnsafe, setAllowUnsafe] = useState(start.allowUnsafe);
+  const [rotate, setRotate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [created, setCreated] = useState<Created[]>([]);
+  const [saved, setSaved] = useState<(SavedNode & { name: string; port: number }) | null>(null);
   const [uncertain, setUncertain] = useState(false);
   const server = data.servers.find((item) => item.id === serverId);
   const done = new Set(created.map((item) => item.protocol));
   const remaining = selected.filter((protocol) => !done.has(protocol));
   const locked = created.length > 0;
   const unsafe = (remaining.includes("shadowsocks") && method === "none") || (remaining.includes("snell") && snellVersion === 6 && snellMode === "unsafe-raw");
+  // ShadowTLS wraps the TCP-based protocols only.
+  const wrappable = remaining.filter((protocol) => protocol !== "vless-reality");
+  const wrapped = shadowTLS && wrappable.length > 0;
 
   function toggle(protocol: Protocol) {
     setSelected((current) => {
@@ -235,7 +263,7 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
   }
 
   function request(protocol: Protocol) {
-    const common = { server_id: serverId, name: nodeName(protocol), protocol, listen_port: selected.length === 1 ? Number(port) || 0 : 0 };
+    const common = { name: nodeName(protocol), listen_port: selected.length === 1 ? Number(port) || 0 : 0 };
     if (protocol === "vless-reality") {
       return {
         ...common,
@@ -244,15 +272,19 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
           handshake_server: handshake.trim(),
           handshake_port: Number(handshakePort),
           server_name: handshake.trim(),
-          fingerprint: "chrome",
+          // Settings the form does not show keep their stored values.
+          fingerprint: initial?.reality?.fingerprint || "chrome",
+          max_time_difference: initial?.reality?.max_time_difference,
           transport,
           transport_settings: transport === "grpc" && serviceName.trim() ? { service_name: serviceName.trim() } : {},
         },
       };
     }
-    if (protocol === "shadowsocks") return { ...common, shadowsocks: { method, allow_insecure: method === "none" && allowUnsafe } };
+    const wrapper = wrapped ? { shadow_tls: { handshake_server: shadowTLSServer.trim(), handshake_port: Number(shadowTLSPort) } } : {};
+    if (protocol === "shadowsocks") return { ...common, ...wrapper, shadowsocks: { method, allow_insecure: method === "none" && allowUnsafe } };
     return {
       ...common,
+      ...wrapper,
       snell: {
         version: snellVersion,
         ...(snellVersion === 5 ? { obfs_mode: snellMode } : { mode: snellMode }),
@@ -270,16 +302,22 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
     setBusy(true);
     setError("");
     try {
-      for (const protocol of remaining) {
-        const result = await api.createNode(request(protocol));
-        const item = { id: result.id, protocol, name: nodeName(protocol), client: result.client };
-        setCreated((current) => [...current, item]);
+      if (initial) {
+        const settings = request(initial.protocol);
+        const result = await api.updateNode(initial.id, { ...settings, rotate_credentials: rotate });
+        setSaved({ ...result, name: settings.name, port: settings.listen_port });
+      } else {
+        for (const protocol of remaining) {
+          const result = await api.createNode({ server_id: serverId, protocol, ...request(protocol) });
+          const item = { id: result.id, protocol, name: nodeName(protocol), client: result.client };
+          setCreated((current) => [...current, item]);
+        }
+        toast(remaining.length > 1 ? `已创建 ${remaining.length} 个节点` : "节点已创建");
       }
-      toast(remaining.length > 1 ? `已创建 ${remaining.length} 个节点` : "节点已创建");
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 0) {
         setUncertain(true);
-        setError("连接中断，无法确认是否已创建。请关闭窗口核对节点列表，不要直接重试。");
+        setError(initial ? "连接中断，无法确认是否已保存。请关闭窗口核对节点列表。" : "连接中断，无法确认是否已创建。请关闭窗口核对节点列表，不要直接重试。");
       } else {
         setError(errorText(failure));
       }
@@ -289,24 +327,54 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
     }
   }
 
+  if (saved && initial) {
+    const link = exportValue(saved.client);
+    // Forwards to the node dial its new port, so their ingress servers apply the change too.
+    const ingress = saved.port === initial.listen_port ? [] : data.forwards.filter((forward) => forward.target_node_id === initial.id).map((forward) => forward.ingress_server_id);
+    return (
+      <Dialog title="已保存" onClose={onClose}>
+        <div className="dialog-body">
+          <div className="saved"><Check size={18} aria-hidden="true" /><strong>{saved.name}</strong></div>
+          {link ? <CodeBlock value={link} label={`复制 ${saved.name}`} /> : <p className="hint">服务器地址识别后可在节点列表复制链接。</p>}
+          <dl className="facts facts-compact">
+            {[...new Set([serverId, ...ingress])].map((id) => {
+              const config = configurationState(index.config.get(id), !!errors.config, now, saved.updated_at);
+              return (
+                <div key={id}>
+                  <dt>{index.servers.get(id)?.name ?? "服务器"}{id !== serverId && "（转发入口）"}</dt>
+                  <dd><Status tone={config.tone}>{config.label}</Status></dd>
+                </div>
+              );
+            })}
+          </dl>
+        </div>
+        <div className="dialog-footer">
+          <button className="btn btn-primary" onClick={onClose}>完成</button>
+        </div>
+      </Dialog>
+    );
+  }
+
   const finished = locked && !remaining.length;
   const exportable = created.filter((item) => exportValue(item.client));
   return (
-    <Dialog title="添加节点" onClose={onClose} busy={busy} wide>
+    <Dialog title={initial ? "编辑节点" : "添加节点"} onClose={onClose} busy={busy} wide>
       <form onSubmit={submit}>
         <div className="dialog-body">
           {!finished && (
             <fieldset className="form" disabled={busy || uncertain}>
-              <div className="chips" role="group" aria-label="协议，可多选">
-                {protocols.map((protocol) => (
-                  <button type="button" key={protocol} aria-pressed={selected.includes(protocol)} disabled={locked} onClick={() => toggle(protocol)}>
-                    {protocolLabels[protocol]}{done.has(protocol) ? " · 已创建" : ""}
-                  </button>
-                ))}
-              </div>
+              {!initial && (
+                <div className="chips" role="group" aria-label="协议，可多选">
+                  {protocols.map((protocol) => (
+                    <button type="button" key={protocol} aria-pressed={selected.includes(protocol)} disabled={locked} onClick={() => toggle(protocol)}>
+                      {protocolLabels[protocol]}{done.has(protocol) ? " · 已创建" : ""}
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="form-grid">
                 <Field label="服务器">
-                  <select value={serverId} disabled={locked} onChange={(event) => setServerId(event.target.value)} required>
+                  <select value={serverId} disabled={locked || !!initial} onChange={(event) => setServerId(event.target.value)} required>
                     {data.servers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                   </select>
                 </Field>
@@ -314,8 +382,8 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
                   <input value={name} readOnly={locked} onChange={(event) => setName(event.target.value)} placeholder={server?.name || "节点名称"} />
                 </Field>
                 {selected.length === 1 && (
-                  <Field label="端口" hint={natPortHint(server, port)}>
-                    <input type="number" min={1} max={65535} value={port} disabled={locked} onChange={(event) => setPort(event.target.value)} placeholder="自动分配" />
+                  <Field label="端口" hint={[initial && "修改后原端口停止监听", natPortHint(server, port)].filter(Boolean).join(" · ") || undefined}>
+                    <input type="number" min={1} max={65535} value={port} disabled={locked} onChange={(event) => setPort(event.target.value)} required={!!initial} placeholder="自动分配" />
                   </Field>
                 )}
                 {remaining.includes("vless-reality") && (
@@ -339,7 +407,20 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
                   </Field>
                 )}
               </div>
-              {(remaining.includes("vless-reality") || remaining.includes("snell")) && (
+              {wrappable.length > 0 && (
+                <label className="check">
+                  <input type="checkbox" checked={shadowTLS} onChange={(event) => setShadowTLS(event.target.checked)} />
+                  用 ShadowTLS 包装 {wrappable.map((protocol) => protocolLabels[protocol]).join(" 和 ")}
+                </label>
+              )}
+              {wrapped && (
+                <div className="form-grid">
+                  <Field label="ShadowTLS 握手域名" hint="需支持 TLS 1.3">
+                    <input value={shadowTLSServer} onChange={(event) => setShadowTLSServer(event.target.value)} required spellCheck={false} />
+                  </Field>
+                </div>
+              )}
+              {(remaining.includes("vless-reality") || remaining.includes("snell") || wrapped) && (
                 <details className="advanced">
                   <summary>高级参数</summary>
                   <div className="form-grid">
@@ -386,6 +467,11 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
                         </select>
                       </Field>
                     )}
+                    {wrapped && (
+                      <Field label="ShadowTLS 握手端口">
+                        <input type="number" min={1} max={65535} value={shadowTLSPort} onChange={(event) => setShadowTLSPort(event.target.value)} required />
+                      </Field>
+                    )}
                   </div>
                 </details>
               )}
@@ -394,6 +480,15 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
                   <input type="checkbox" checked={allowUnsafe} onChange={(event) => setAllowUnsafe(event.target.checked)} required />
                   <span>这条链路已有其他加密保护，允许使用不加密模式。</span>
                 </label>
+              )}
+              {initial && (
+                <>
+                  <label className="check">
+                    <input type="checkbox" checked={rotate} onChange={(event) => setRotate(event.target.checked)} />
+                    重新生成密钥（旧链接失效）
+                  </label>
+                  <p className="hint">保存后立即下发到服务器，现有连接可能短暂中断。</p>
+                </>
               )}
             </fieldset>
           )}
@@ -417,7 +512,7 @@ export function NodeForm({ serverId: initialServer, onClose }: { serverId?: stri
           {!finished && !uncertain && (
             <button type="submit" className="btn btn-primary" disabled={busy || !serverId}>
               {busy && <Spinner size={15} />}
-              {locked ? `创建剩余 ${remaining.length} 个` : selected.length > 1 ? `创建 ${selected.length} 个节点` : "创建节点"}
+              {initial ? "保存" : locked ? `创建剩余 ${remaining.length} 个` : selected.length > 1 ? `创建 ${selected.length} 个节点` : "创建节点"}
             </button>
           )}
         </div>

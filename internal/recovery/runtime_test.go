@@ -43,6 +43,9 @@ func TestLoadAndWriteDatabasePreservesRuntimeCredentials(t *testing.T) {
 	if byID[expected.snell.ID].Snell.PSK != expected.snell.Snell.PSK {
 		t.Fatal("Snell PSK changed")
 	}
+	if stls := byID[expected.snell.ID].ShadowTLS; stls == nil || *stls != *expected.snell.ShadowTLS {
+		t.Fatalf("ShadowTLS settings changed: %+v", stls)
+	}
 
 	masterKey := base64.StdEncoding.EncodeToString(make([]byte, 32))
 	databasePath := filepath.Join(t.TempDir(), "recovered.db")
@@ -87,7 +90,8 @@ func TestLoadAndWriteDatabasePreservesRuntimeCredentials(t *testing.T) {
 		t.Fatalf("sealed Shadowsocks password changed after database import: %v", err)
 	}
 	storedSnell, err := database.GetNode(context.Background(), expected.snell.ID)
-	if err != nil || storedSnell.Snell.PSK != expected.snell.Snell.PSK || storedSnell.Snell.ObfsMode != expected.snell.Snell.ObfsMode {
+	if err != nil || storedSnell.Snell.PSK != expected.snell.Snell.PSK || storedSnell.Snell.ObfsMode != expected.snell.Snell.ObfsMode ||
+		storedSnell.ShadowTLS == nil || *storedSnell.ShadowTLS != *expected.snell.ShadowTLS {
 		t.Fatalf("sealed Snell settings changed after database import: %v", err)
 	}
 	forwards, err := database.ListForwards(context.Background())
@@ -117,7 +121,7 @@ func TestLoadAndWriteDatabasePreservesRuntimeCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, secret := range []string{expected.reality.Reality.PrivateKey, expected.reality.Reality.UUID, expected.shadowsocks.SS.Password, expected.snell.Snell.PSK} {
+	for _, secret := range []string{expected.reality.Reality.PrivateKey, expected.reality.Reality.UUID, expected.shadowsocks.SS.Password, expected.snell.Snell.PSK, expected.snell.ShadowTLS.Password} {
 		if strings.Contains(string(databaseBytes), secret) {
 			t.Fatal("protocol secret is present in plaintext in the recovered database")
 		}
@@ -289,7 +293,8 @@ func writeFixture(t *testing.T, mutate func(map[string]any)) (string, fixtureExp
 	snell := model.Node{
 		ID: "snell-one", ServerID: "srv-one", Name: "Snell One", Protocol: model.ProtocolSnell,
 		ListenPort: 24445, Enabled: true,
-		Snell: &model.SnellSpec{Version: 5, PSK: "preserved-snell-psk", ObfsMode: "http"},
+		Snell:     &model.SnellSpec{Version: 5, PSK: "preserved-snell-psk", ObfsMode: "http"},
+		ShadowTLS: &model.ShadowTLSSpec{Password: "preserved-shadow-tls", HandshakeServer: "www.microsoft.com", HandshakePort: 443},
 	}
 	for _, node := range []model.Node{reality, shadowsocks, snell} {
 		data, err := configgen.NodeFragment(node)
@@ -327,7 +332,7 @@ func writeFixture(t *testing.T, mutate func(map[string]any)) (string, fixtureExp
 	nameReality, profileReality, fingerprint, transport := reality.Name, "REALITY · xtls-rprx-vision", reality.Reality.Fingerprint, reality.Reality.Transport
 	settings := reality.Reality.TransportSettings
 	nameSS, profileSS, allowSS := shadowsocks.Name, shadowsocks.SS.Method, false
-	nameSnell, profileSnell, allowSnell := snell.Name, "Snell v5", false
+	nameSnell, profileSnell, allowSnell := snell.Name, "Snell v5 · ShadowTLS", false
 	nameSing, empty := singForward.Name, ""
 	nameRealm := realmForward.Name
 	nodes := map[string]NodeMetadata{

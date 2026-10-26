@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { attentionItems, buildIndex, fleetSummary, forwardTarget, regionParts, routeState, sortRoutes, targetsServer } from "../app/lib/fleet.ts";
+import { attentionItems, buildIndex, fleetSummary, forwardTarget, regionParts, routeState, targetsServer } from "../app/lib/fleet.ts";
 import { parseTime, relativeTime } from "../app/lib/format.ts";
 import { chartScale, latencyRuns, probeState } from "../app/lib/quality.ts";
 import { parseRoute, routeHref } from "../app/lib/routing.ts";
@@ -98,14 +98,13 @@ test("regions accept GeoIP and hand-written formats", () => {
   assert.deepEqual(regionParts(undefined), { code: "", place: "" });
 });
 
-test("route ordering puts problems first and summary counts only measured routes", () => {
+test("summary counts only measured routes", () => {
   const probe = (id, status) => ({ forward_id: id, server_id: "a", checked_at: fresh, attempts: 3, successes: status === "down" ? 0 : 3, latency_ms: 20, jitter_ms: 1, loss_percent: 0, status });
   const forward = (id, extra = {}) => ({ id, ingress_server_id: "a", name: id, listen_port: 1, networks: ["tcp"], target_host: "x", target_port: 1, engine: "sing-box", enabled: true, ...extra });
   const forwards = [forward("ok"), forward("off", { enabled: false }), forward("udp", { networks: ["udp"] }), forward("down"), forward("slow")];
   const fleet = { servers: [{ id: "a", name: "a", address: "", agent_status: "online", last_seen_at: fresh, egress_ipv4: true, egress_ipv6: false }], nodes: [], forwards,
     probes: [probe("ok", "stable"), probe("down", "down"), probe("slow", "degraded")], config: [], cores: noCores, traffic: noTraffic };
   const index = buildIndex(fleet);
-  assert.deepEqual(sortRoutes(forwards, index, now).map((item) => item.id), ["down", "slow", "ok", "udp", "off"]);
   assert.deepEqual(fleetSummary(fleet, index, now), { servers: 1, online: 1, measured: 3, healthy: 1 });
 });
 
@@ -154,7 +153,6 @@ test("a route whose forwarding process is down is not healthy", () => {
   const down = routeState(forwards[1], index, false, now);
   assert.deepEqual([down.stopped, down.tone, down.engineDetail, down.probe.tone], [true, "bad", "启动失败", "good"]);
   assert.equal(routeState(forwards[0], index, false, now).tone, "good");
-  assert.deepEqual(sortRoutes(forwards, index, now).map((item) => item.id), ["down", "up"]);
   assert.deepEqual(fleetSummary(fleet, index, now), { servers: 1, online: 1, measured: 2, healthy: 1 });
 });
 

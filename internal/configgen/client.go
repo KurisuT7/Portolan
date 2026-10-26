@@ -57,9 +57,16 @@ func ExportClient(node model.Node, endpoint PublishedEndpoint) (ClientExport, er
 		if strings.HasPrefix(node.SS.Method, "2022-") {
 			userinfo = percentEncode(node.SS.Method) + ":" + percentEncode(node.SS.Password)
 		}
+		details := map[string]any{"protocol": "shadowsocks", "method": node.SS.Method}
+		query := ""
+		if stls := node.ShadowTLS; stls != nil {
+			// SIP002 carries the plugin and its SIP003 options in one parameter.
+			query = "/?plugin=" + percentEncode("shadow-tls;host="+stls.HandshakeServer+";password="+stls.Password+";version=3")
+			details["shadow_tls"] = true
+		}
 		return ClientExport{
-			URI:     "ss://" + userinfo + "@" + hostPort + "#" + url.PathEscape(endpoint.Name),
-			Details: map[string]any{"protocol": "shadowsocks", "method": node.SS.Method},
+			URI:     "ss://" + userinfo + "@" + hostPort + query + "#" + url.PathEscape(endpoint.Name),
+			Details: details,
 		}, nil
 	case model.ProtocolSnell:
 		line := fmt.Sprintf("%s = snell, %s, %d, psk=%s, version=%d", endpoint.Name, endpoint.Address, endpoint.Port, node.Snell.PSK, node.Snell.Version)
@@ -71,6 +78,10 @@ func ExportClient(node model.Node, endpoint PublishedEndpoint) (ClientExport, er
 		if node.Snell.Version == 6 && node.Snell.Mode != "" && node.Snell.Mode != "default" {
 			line += ", mode=" + node.Snell.Mode
 			details["mode"] = node.Snell.Mode
+		}
+		if stls := node.ShadowTLS; stls != nil {
+			line += fmt.Sprintf(", shadow-tls-password=%s, shadow-tls-sni=%s, shadow-tls-version=3", stls.Password, stls.HandshakeServer)
+			details["shadow_tls"] = true
 		}
 		return ClientExport{SurgeLine: line, Details: details}, nil
 	}

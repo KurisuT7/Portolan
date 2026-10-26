@@ -1,13 +1,14 @@
 "use client";
 
 import { Fragment, useState, type FormEvent } from "react";
-import { ArrowRight, ArrowUpCircle, Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { ArrowRight, ArrowUpCircle, ArrowUpDown, Check, Cpu, KeyRound, Pencil, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { agentUpdateState, agentUpdateSummary } from "../lib/agent";
 import type { ApiServer, CreateServerResponse } from "../lib/api";
 import { displayPort, serverHost } from "../lib/endpoints";
 import { describeMapping, mappedPortCount, mappingRows, parseMappingRows, type MappingRow } from "../lib/nat";
 import { regionParts, targetsServer } from "../lib/fleet";
 import { relativeTime, timeLabel } from "../lib/format";
+import { moveWithin } from "../lib/order";
 import { routeHref } from "../lib/routing";
 import { coresReady } from "../lib/cores";
 import { configurationState, realmForwardId, serverState, singBoxUnit, unitState } from "../lib/status";
@@ -17,6 +18,7 @@ import { api, errorText, useFleet } from "./data";
 import { navigate } from "./hooks";
 import { ForwardForm, RouteGrid } from "./forwards";
 import { NodeForm, NodeList } from "./nodes";
+import { SortableGrid } from "./sortable";
 import { Rates, TrafficBreakdown, TrafficPanel } from "./traffic";
 import { Address, Badge, CodeBlock, ConfirmDelete, CopyButton, Dialog, Empty, ErrorText, Field, PageHeader, ProtocolTag, SearchInput, Section, Spinner, Status, toast } from "./ui";
 
@@ -26,18 +28,28 @@ function matches(server: ApiServer, query: string) {
 }
 
 export function ServersPage() {
-  const { data, errors } = useFleet();
+  const { data, errors, reorder } = useFleet();
   const [query, setQuery] = useState("");
   const [creating, setCreating] = useState(false);
   const [cores, setCores] = useState(false);
+  const [sorting, setSorting] = useState(false);
   const rows = data.servers.filter((server) => matches(server, query));
+  function move(active: string, over: string) {
+    const order = moveWithin(data.servers.map((server) => server.id), rows.map((server) => server.id), active, over);
+    reorder("servers", order).catch((failure) => toast(errorText(failure), "bad"));
+  }
   return (
     <>
       <PageHeader
         title="服务器"
         meta={errors.servers ? "服务器数据未更新" : `${data.servers.length} 台`}
-        actions={
+        actions={sorting ? (
+          <button className="btn btn-primary" onClick={() => setSorting(false)}><Check size={16} />完成</button>
+        ) : (
           <>
+            <button className="btn" disabled={!!errors.servers || data.servers.length < 2} onClick={() => setSorting(true)}>
+              <ArrowUpDown size={16} />排序
+            </button>
             <button className="btn" disabled={!!errors.cores} onClick={() => setCores(true)}>
               <Cpu size={16} />核心版本
             </button>
@@ -45,7 +57,7 @@ export function ServersPage() {
               <Plus size={16} />添加服务器
             </button>
           </>
-        }
+        )}
       />
       <AgentUpdates />
       {data.servers.length > 4 && (
@@ -53,7 +65,7 @@ export function ServersPage() {
           <SearchInput value={query} onChange={setQuery} placeholder="搜索名称、地区或地址" />
         </div>
       )}
-      {rows.length ? <ServerGrid servers={rows} /> : (
+      {rows.length ? <ServerGrid servers={rows} sorting={sorting} onMove={move} /> : (
         <Empty>{errors.servers ? "暂时无法读取服务器。" : query ? "没有匹配的服务器" : "添加服务器后，在服务器上运行安装命令即可接入。"}</Empty>
       )}
       {creating && <ServerForm onClose={() => setCreating(false)} />}
@@ -104,8 +116,14 @@ function AgentUpdates() {
   );
 }
 
-export function ServerGrid({ servers }: { servers: ApiServer[] }) {
-  return <div className="server-grid">{servers.map((server) => <ServerCard key={server.id} server={server} />)}</div>;
+// onMove makes the grid sortable; cards move while sorting is on.
+export function ServerGrid({ servers, sorting = false, onMove }: { servers: ApiServer[]; sorting?: boolean; onMove?: (active: string, over: string) => void }) {
+  if (!onMove) return <div className="server-grid">{servers.map((server) => <ServerCard key={server.id} server={server} />)}</div>;
+  return (
+    <SortableGrid className="server-grid" items={servers} sorting={sorting} onMove={onMove}>
+      {(server) => <ServerCard server={server} />}
+    </SortableGrid>
+  );
 }
 
 function ServerCard({ server }: { server: ApiServer }) {

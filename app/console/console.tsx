@@ -243,13 +243,13 @@ function SecurityDialog({ control, onClose }: { control: ConsoleControl; onClose
 
 function Shell({ control }: { control: ConsoleControl }) {
   const route = useRoute();
-  const { data, errors, fetchedAt, refresh } = control;
+  const { data, errors, fetchedAt, refresh, reorder } = control;
   const index = useMemo(() => buildIndex(data), [data]);
   const version = control.info?.version ?? "";
   const agentVersion = control.info?.agent_version ?? "";
   const fleet = useMemo(
-    () => ({ data, index, errors, now: fetchedAt, refresh, version, agentVersion }),
-    [data, index, errors, fetchedAt, refresh, version, agentVersion],
+    () => ({ data, index, errors, now: fetchedAt, refresh, reorder, version, agentVersion }),
+    [data, index, errors, fetchedAt, refresh, reorder, version, agentVersion],
   );
   const [palette, setPalette] = useState(false);
   const [security, setSecurity] = useState(false);

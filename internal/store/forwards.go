@@ -34,8 +34,8 @@ func (s *Store) CreateForward(ctx context.Context, forward model.Forward) (model
 	if err != nil {
 		return model.Forward{}, err
 	}
-	_, err = tx.ExecContext(ctx, `INSERT INTO forwards(id,ingress_server_id,name,listen_port,engine,spec_json,created_at)
-		VALUES(?,?,?,?,?,?,?)`, forward.ID, forward.IngressServerID, forward.Name, forward.ListenPort, string(forward.Engine), data,
+	_, err = tx.ExecContext(ctx, `INSERT INTO forwards(id,ingress_server_id,name,listen_port,engine,spec_json,created_at,sort_order)
+		VALUES(?,?,?,?,?,?,?,`+nextSortOrder("forwards")+`)`, forward.ID, forward.IngressServerID, forward.Name, forward.ListenPort, string(forward.Engine), data,
 		forward.CreatedAt.Format(time.RFC3339Nano))
 	if err != nil {
 		return model.Forward{}, err
@@ -231,7 +231,7 @@ func firstMappedPort(ctx context.Context, db queryer, server model.Server, exclu
 }
 
 func (s *Store) ListForwards(ctx context.Context) ([]model.Forward, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT spec_json FROM forwards ORDER BY created_at DESC`)
+	rows, err := s.db.QueryContext(ctx, `SELECT spec_json FROM forwards ORDER BY sort_order,created_at`)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (s *Store) ListForwards(ctx context.Context) ([]model.Forward, error) {
 }
 
 func (s *Store) ListForwardsForServer(ctx context.Context, serverID string) ([]model.Forward, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT spec_json FROM forwards WHERE ingress_server_id=? ORDER BY created_at DESC`, serverID)
+	rows, err := s.db.QueryContext(ctx, `SELECT spec_json FROM forwards WHERE ingress_server_id=? ORDER BY sort_order,created_at`, serverID)
 	if err != nil {
 		return nil, err
 	}

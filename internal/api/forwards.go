@@ -132,3 +132,7 @@ func (s *Server) forwardProbeHistory(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, history)
 }
+
+func (s *Server) reorderForwards(w http.ResponseWriter, r *http.Request) {
+	s.reorder(w, r, s.store.ReorderForwards)
+}

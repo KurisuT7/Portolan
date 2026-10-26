@@ -39,8 +39,8 @@ func (s *Store) CreateServer(ctx context.Context, server model.Server) (created 
 	now := time.Now().UTC()
 	_, err = s.db.ExecContext(ctx, `INSERT INTO servers
 			(id,name,address,ipv4_address,ipv6_address,egress_ipv4,egress_ipv6,region,nat_ports,traffic_reset_day,
-			 agent_status,enroll_token_hash,enroll_expires_at,created_at)
-			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, server.ID, server.Name, server.Address, server.IPv4Address,
+			 agent_status,enroll_token_hash,enroll_expires_at,created_at,sort_order)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,`+nextSortOrder("servers")+`)`, server.ID, server.Name, server.Address, server.IPv4Address,
 		server.IPv6Address, server.EgressIPv4, server.EgressIPv6, server.Region, natPorts, server.TrafficResetDay, "pending",
 		tokenHash(token), now.Add(20*time.Minute).Format(time.RFC3339Nano), now.Format(time.RFC3339Nano))
 	if err != nil {
@@ -519,7 +519,7 @@ const serverQuery = `SELECT s.id,s.name,s.address,s.ipv4_address,s.ipv6_address,
       FROM servers s LEFT JOIN agent_runtime r ON r.server_id=s.id`
 
 func (s *Store) listServersFrom(ctx context.Context, db queryer) ([]model.Server, error) {
-	rows, err := db.QueryContext(ctx, serverQuery+` ORDER BY s.created_at`)
+	rows, err := db.QueryContext(ctx, serverQuery+` ORDER BY s.sort_order,s.created_at`)
 	if err != nil {
 		return nil, err
 	}

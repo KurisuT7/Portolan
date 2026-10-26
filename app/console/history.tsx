@@ -9,7 +9,8 @@ const HistoryContext = createContext<Map<string, ApiForwardProbeHistory>>(new Ma
 // 24-hour histories feed the route sparklines; they change slowly, so they refresh every five minutes.
 export function HistoryProvider({ forwards, children }: { forwards: ApiForward[]; children: ReactNode }) {
   const [histories, setHistories] = useState<Map<string, ApiForwardProbeHistory>>(new Map());
-  const ids = forwards.filter((forward) => forward.enabled && forward.networks.includes("tcp")).map((forward) => forward.id).join(",");
+  // Sorted so that rearranging the cards does not reload every history.
+  const ids = forwards.filter((forward) => forward.enabled && forward.networks.includes("tcp")).map((forward) => forward.id).sort().join(",");
   useEffect(() => {
     if (!ids) return;
     const controller = new AbortController();

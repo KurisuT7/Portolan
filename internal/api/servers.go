@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"time"
@@ -172,6 +173,27 @@ func (s *Server) syncServer(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) deleteServer(w http.ResponseWriter, r *http.Request) {
 	if err := s.store.DeleteServer(r.Context(), r.PathValue("id")); err != nil {
+		s.writeStoreError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) reorderServers(w http.ResponseWriter, r *http.Request) {
+	s.reorder(w, r, s.store.ReorderServers)
+}
+
+// reorder stores the console order of a whole collection: {"ids": [...]} lists
+// every item once, first to last.
+func (s *Server) reorder(w http.ResponseWriter, r *http.Request, save func(context.Context, []string) error) {
+	var request struct {
+		IDs []string `json:"ids"`
+	}
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if err := save(r.Context(), request.IDs); err != nil {
 		s.writeStoreError(w, err)
 		return
 	}

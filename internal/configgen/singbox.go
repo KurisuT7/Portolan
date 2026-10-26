@@ -95,7 +95,36 @@ func NodeFragment(node model.Node) ([]byte, error) {
 			inbound["mode"] = node.Snell.Mode
 		}
 	}
-	return json.MarshalIndent(fragment{Inbounds: []map[string]any{inbound}}, "", "  ")
+	if node.ShadowTLS == nil {
+		return json.MarshalIndent(fragment{Inbounds: []map[string]any{inbound}}, "", "  ")
+	}
+	// The ShadowTLS inbound owns the node's TCP port and hands authenticated
+	// connections to the protocol inbound. That inbound still serves
+	// Shadowsocks UDP on the same port, where clients send it by default; Snell
+	// has no UDP listener and binds only an unused loopback TCP port.
+	inner := "node-" + node.ID + "-inner"
+	wrapper := map[string]any{
+		"type":        "shadowtls",
+		"tag":         "node-" + node.ID,
+		"listen":      "::",
+		"listen_port": node.ListenPort,
+		"version":     3,
+		"users":       []map[string]any{{"name": node.Name, "password": node.ShadowTLS.Password}},
+		"handshake": map[string]any{
+			"server":      node.ShadowTLS.HandshakeServer,
+			"server_port": node.ShadowTLS.HandshakePort,
+		},
+		"strict_mode": true,
+		"detour":      inner,
+	}
+	inbound["tag"] = inner
+	if node.Protocol == model.ProtocolShadowsocks {
+		inbound["network"] = []string{"udp"}
+	} else {
+		inbound["listen"] = "127.0.0.1"
+		delete(inbound, "listen_port")
+	}
+	return json.MarshalIndent(fragment{Inbounds: []map[string]any{wrapper, inbound}}, "", "  ")
 }
 
 func ForwardFragment(forward model.Forward) ([]byte, error) {

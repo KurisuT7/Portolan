@@ -1,4 +1,4 @@
-import type { ApiNode, ApiServer } from "./api";
+import type { ApiNode, ApiNodeSettings, ApiServer } from "./api";
 
 export const protocolLabels: Record<ApiNode["protocol"], string> = {
   "vless-reality": "Reality",
@@ -52,6 +52,29 @@ export function displayNodeProfile(
     return detail.replace(/^Snell\s*/iu, "");
   }
   return detail;
+}
+
+// The node form starts from the settings of the node being edited, or from
+// the defaults for a new node.
+export function nodeFormValues(settings?: ApiNodeSettings) {
+  const { reality, shadowsocks, snell, shadow_tls: shadowTLS } = settings ?? {};
+  return {
+    protocol: settings?.protocol ?? "vless-reality",
+    name: settings?.name ?? "",
+    port: settings ? String(settings.listen_port) : "",
+    handshake: reality?.handshake_server ?? "aws.amazon.com",
+    handshakePort: String(reality?.handshake_port ?? 443),
+    transport: reality?.transport || "tcp",
+    flow: reality ? reality.flow : "xtls-rprx-vision",
+    serviceName: reality?.transport_settings?.service_name ?? "",
+    method: shadowsocks?.method ?? "2022-blake3-aes-256-gcm",
+    snellVersion: snell?.version ?? 6,
+    snellMode: !snell ? "default" : snell.version === 5 ? snell.obfs_mode ?? "" : snell.mode || "default",
+    shadowTLS: !!shadowTLS,
+    shadowTLSServer: shadowTLS?.handshake_server ?? "aws.amazon.com",
+    shadowTLSPort: String(shadowTLS?.handshake_port ?? 443),
+    allowUnsafe: !!(shadowsocks?.allow_insecure || snell?.allow_insecure),
+  };
 }
 
 // port is the one clients dial, which differs from listen_port behind NAT.
