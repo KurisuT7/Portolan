@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-26
+
 ### 新增
 
 - 服务器和转发卡片可以拖动排序：在「服务器」或「转发」页点「排序」，拖动卡片后点「完成」。顺序保存在面板里，概览、
@@ -140,7 +142,8 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.4.1
 [0.4.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.4.0
 [0.3.3]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.3
 [0.3.2]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.2
