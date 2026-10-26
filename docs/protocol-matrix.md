@@ -52,7 +52,7 @@ Shadowsocks 和 Snell 节点可以在创建时套一层 sing-box 官方 [ShadowT
 - 节点端口的 TCP 由 ShadowTLS 监听，认证通过的连接交给内层协议入站（`detour`）。Shadowsocks 的 UDP 仍监听同一端口，客户端默认把 UDP 发到这里；Snell 没有 UDP 监听，内层入站只占用一个本机回环端口。
 - 密码随机生成。
 - 导出：Shadowsocks 在 SIP002 链接里写 `plugin=shadow-tls;host=<握手域名>;password=<密码>;version=3`；Snell 的 Surge 配置行追加 `shadow-tls-password`、`shadow-tls-sni` 和 `shadow-tls-version=3`（参见 [Surge Shadow TLS 参数](https://manual.nssurge.com/policies/tls.html)）。
-- 旧版 Agent 不认识这一层，会只部署内层协议，所以面板拒绝在 Agent 早于 v0.5.0 的服务器上创建这类节点。
+- 旧版 Agent 不认识这一层，会只部署内层协议，所以面板拒绝在 Agent 早于 v0.4.1 的服务器上创建这类节点。
 
 ## 增加协议方法
 

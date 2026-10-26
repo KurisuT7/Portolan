@@ -22,7 +22,7 @@ const agentSelfUpdateSince = "v0.2.0"
 
 // shadowTLSAgentSince is the first Agent release that generates ShadowTLS
 // inbounds.
-const shadowTLSAgentSince = "v0.5.0"
+const shadowTLSAgentSince = "v0.4.1"
 
 var releasePattern = regexp.MustCompile(`^v(\d+)\.(\d+)\.(\d+)`)
 
