@@ -124,9 +124,9 @@ server {
 ```
 
 面板只信任本机代理附加的 `X-Forwarded-For`，从右往左取第一个不受信任的地址作为客户端
-地址，用于登录限速、日志和 Agent 注册。代理前面还有 Cloudflare 等 CDN 时，把 CDN 的地址段同时加入
-代理和 `PORTOLAN_TRUSTED_PROXIES` 的信任列表（可直接写 `cloudflare` 预设）；否则 Caddy 会把
-`X-Forwarded-For` 覆盖成 CDN 节点地址，面板也会按 CDN 节点记录来源地址、并让同一节点后的所有访问共用登录失败计数：
+地址，用于登录限速、日志和 Agent 注册。代理前面还有 CDN 时，把 CDN 的地址段同时加入
+代理和 `PORTOLAN_TRUSTED_PROXIES` 的信任列表，否则面板记录到的是 CDN 节点的地址，
+同一个 CDN 节点后面的所有人会共用一个登录失败计数。例如套 Cloudflare 时：
 
 ```caddyfile
 panel.example.com {
