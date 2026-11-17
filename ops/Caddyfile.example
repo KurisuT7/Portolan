@@ -1,5 +1,10 @@
 panel.example.com {
 	encode zstd gzip
-	reverse_proxy 127.0.0.1:8088
+	reverse_proxy 127.0.0.1:8088 {
+		# Behind Cloudflare, add its IP ranges to trusted_proxies (and set
+		# PORTOLAN_TRUSTED_PROXIES=cloudflare in panel.env) so Caddy forwards
+		# client addresses instead of replacing X-Forwarded-For with edge IPs.
+		# trusted_proxies 173.245.48.0/20 ...
+	}
 	header Strict-Transport-Security "max-age=31536000"
 }

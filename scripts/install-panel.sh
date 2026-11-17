@@ -215,7 +215,7 @@ PORTOLAN_PUBLIC_URL=$public_url
 PORTOLAN_LISTEN=127.0.0.1:8088
 # Optional: a GeoLite2/GeoIP2 City or DB-IP City Lite MMDB file for server regions.
 #PORTOLAN_GEOIP_DB=/var/lib/GeoIP/dbip-city-lite.mmdb
-# Reverse proxies whose X-Forwarded-For is trusted, besides this host.
+# Reverse proxies whose X-Forwarded-For is trusted, besides this host (e.g. cloudflare).
 #PORTOLAN_TRUSTED_PROXIES=
 EOF
   umask 022

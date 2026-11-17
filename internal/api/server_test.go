@@ -355,6 +355,66 @@ func TestAuthenticatedAgentAddressReportRepairsExistingManagedForward(t *testing
 	t.Fatalf("managed forward was not rerouted: %#v", forwards)
 }
 
+func TestAgentNetworkReportPopulatesBlankRegionAfterEnrollment(t *testing.T) {
+	t.Parallel()
+	server := newTestServerWithRegionLookup(t, func(address string) (string, error) {
+		switch address {
+		case "198.51.100.88":
+			return "US", nil
+		default:
+			return "", nil
+		}
+	})
+	created, enrollmentToken, err := server.store.CreateServer(context.Background(), model.Server{Name: "nat-cloud"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, _ := json.Marshal(map[string]any{
+		"enrollment_token": enrollmentToken,
+		"public_addresses": []string{},
+		"egress_families":  []string{"ipv4"},
+	})
+	enrollReq := httptest.NewRequest(http.MethodPost, "/api/v1/agent/enroll", bytes.NewReader(body))
+	enrollReq.Header.Set("Content-Type", "application/json")
+	enrollReq.RemoteAddr = "127.0.0.1:41234"
+	enrollRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(enrollRec, enrollReq)
+	if enrollRec.Code != http.StatusCreated {
+		t.Fatalf("enrollment returned %d: %s", enrollRec.Code, enrollRec.Body.String())
+	}
+	var enrolled struct {
+		AgentToken string `json:"agent_token"`
+	}
+	if err := json.Unmarshal(enrollRec.Body.Bytes(), &enrolled); err != nil {
+		t.Fatal(err)
+	}
+	before, err := server.store.GetServer(context.Background(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Region != "" {
+		t.Fatalf("expected blank initial region when observed IP is loopback, got %q", before.Region)
+	}
+
+	pollReq := httptest.NewRequest(http.MethodGet, "/api/v1/agent/jobs/next?wait=0", nil)
+	pollReq.Header.Set("Authorization", "Bearer "+enrolled.AgentToken)
+	pollReq.Header.Set("X-Portolan-Server-ID", created.ID)
+	pollReq.Header.Set(agentAddressesHeader, "198.51.100.88")
+	pollReq.Header.Set(agentEgressFamiliesHeader, "ipv4")
+	pollRec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(pollRec, pollReq)
+	if pollRec.Code != http.StatusOK && pollRec.Code != http.StatusNoContent {
+		t.Fatalf("poll returned %d: %s", pollRec.Code, pollRec.Body.String())
+	}
+	after, err := server.store.GetServer(context.Background(), created.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after.Address != "198.51.100.88" || after.IPv4Address != "198.51.100.88" || after.Region != "US" {
+		t.Fatalf("server after address report = %#v", after)
+	}
+}
+
 func TestImmediateForwardProbeRoundTrip(t *testing.T) {
 	t.Parallel()
 	server := newTestServer(t)

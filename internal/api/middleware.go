@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"net/http"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -65,16 +66,24 @@ func (s *Server) withAgent(next http.HandlerFunc) http.HandlerFunc {
 			}
 			ipv4Address, ipv6Address := agentPublicAddresses(addressCandidates)
 			egressIPv4, egressIPv6 := agentEgressFamilies(egressCandidates)
-			if _, err := s.store.UpdateAgentNetwork(r.Context(), serverID, store.AgentNetworkUpdate{
+			updated, err := s.store.UpdateAgentNetwork(r.Context(), serverID, store.AgentNetworkUpdate{
 				AddressesKnown: addressesKnown,
 				IPv4Address:    ipv4Address,
 				IPv6Address:    ipv6Address,
 				EgressKnown:    egressKnown,
 				EgressIPv4:     egressIPv4,
 				EgressIPv6:     egressIPv6,
-			}); err != nil {
+			})
+			if err != nil {
 				s.internalError(w, err)
 				return
+			}
+			if updated.Region == "" {
+				lookupAddress := ipv4Address
+				if lookupAddress == "" {
+					lookupAddress = ipv6Address
+				}
+				s.lookupAndSetBlankRegion(r.Context(), serverID, lookupAddress)
 			}
 		}
 		next(w, r.WithContext(context.WithValue(r.Context(), agentContextKey{}, serverID)))
@@ -131,8 +140,20 @@ func (s *Server) accessLog(next http.Handler) http.Handler {
 		if strings.HasPrefix(path, "/api/v1/agent/bootstrap/") || strings.HasPrefix(path, "/api/v1/agent/downloads/") {
 			path = "/api/v1/agent/downloads/[redacted]"
 		}
+		client := s.clientIP(r)
+		if r.Header.Get("CF-Connecting-IP") != "" {
+			if addr, err := netip.ParseAddr(client); err == nil && isCloudflareProxy(addr) {
+				s.cloudflareWarnOnce.Do(func() {
+					if !s.trustedProxy(addr) {
+						s.logger.Warn("request arrived through Cloudflare but resolved to a Cloudflare edge IP; add cloudflare to PORTOLAN_TRUSTED_PROXIES and configure your reverse proxy to trust Cloudflare ranges", "client", client)
+					} else {
+						s.logger.Warn("request arrived through Cloudflare and PORTOLAN_TRUSTED_PROXIES includes cloudflare, yet X-Forwarded-For only carried a Cloudflare edge IP; configure your reverse proxy to trust Cloudflare ranges", "client", client)
+					}
+				})
+			}
+		}
 		s.logger.Info("http request", "method", r.Method, "path", path, "status", recorder.status,
-			"client", s.clientIP(r), "duration", time.Since(started))
+			"client", client, "duration", time.Since(started))
 	})
 }
 

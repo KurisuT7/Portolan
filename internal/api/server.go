@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/netip"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/KurisuT7/Portolan/internal/buildinfo"
@@ -25,22 +26,23 @@ const (
 )
 
 type Server struct {
-	store          *store.Store
-	adminHash      [32]byte
-	secureCookies  bool
-	logger         *slog.Logger
-	sessions       *sessionStore
-	guard          *loginGuard
-	trustedProxies []netip.Prefix
-	publicURL      string
-	downloadsDir   string
-	regionLookup   func(string) (string, error)
-	geoIPProvider  string
-	cores          *cores.Client
-	releases       *panelupdate.Releases
-	updater        *panelupdate.Updater
-	deployment     string
-	web            http.Handler
+	store              *store.Store
+	adminHash          [32]byte
+	secureCookies      bool
+	logger             *slog.Logger
+	sessions           *sessionStore
+	guard              *loginGuard
+	trustedProxies     []netip.Prefix
+	publicURL          string
+	downloadsDir       string
+	regionLookup       func(string) (string, error)
+	geoIPProvider      string
+	cores              *cores.Client
+	releases           *panelupdate.Releases
+	updater            *panelupdate.Updater
+	deployment         string
+	web                http.Handler
+	cloudflareWarnOnce sync.Once
 }
 
 type Config struct {

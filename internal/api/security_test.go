@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -230,5 +231,49 @@ func TestClientIPTrustsOnlyConfiguredProxies(t *testing.T) {
 	}
 	if _, err := ParseTrustedProxies("not-an-address"); err == nil {
 		t.Fatal("an invalid trusted proxy was accepted")
+	}
+
+	cloudflareEdge := CloudflareTrustedProxies[0].Addr().String()
+	request.RemoteAddr = "127.0.0.1:50000"
+	request.Header.Set("X-Forwarded-For", "198.51.100.25, "+cloudflareEdge)
+	cloudflareProxies, err := ParseTrustedProxies("cloudflare")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server.trustedProxies = cloudflareProxies
+	if got := server.clientIP(request); got != "198.51.100.25" {
+		t.Fatalf("client behind Cloudflare preset = %q, want 198.51.100.25", got)
+	}
+
+	// When every hop in X-Forwarded-For is trusted, return the outermost proxy
+	// rather than collapsing back to 127.0.0.1.
+	request.Header.Set("X-Forwarded-For", cloudflareEdge)
+	if got := server.clientIP(request); got != cloudflareEdge {
+		t.Fatalf("all-trusted X-Forwarded-For = %q, want %s", got, cloudflareEdge)
+	}
+}
+
+func TestCloudflareProxyMisconfigurationWarnsOnce(t *testing.T) {
+	t.Parallel()
+	var logBuf bytes.Buffer
+	server := newTestServer(t)
+	server.logger = slog.New(slog.NewTextHandler(&logBuf, nil))
+
+	cloudflareEdge := CloudflareTrustedProxies[0].Addr().String()
+	handler := server.Handler()
+	for range 2 {
+		request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+		request.RemoteAddr = "127.0.0.1:50000"
+		request.Header.Set("X-Forwarded-For", cloudflareEdge)
+		request.Header.Set("CF-Connecting-IP", "198.51.100.25")
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, request)
+		if recorder.Code != http.StatusOK {
+			t.Fatalf("healthz returned %d", recorder.Code)
+		}
+	}
+	output := logBuf.String()
+	if count := strings.Count(output, "level=WARN"); count != 1 || !strings.Contains(output, "PORTOLAN_TRUSTED_PROXIES") {
+		t.Fatalf("expected exactly one Cloudflare warning, got %d in:\n%s", count, output)
 	}
 }

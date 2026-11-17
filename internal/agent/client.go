@@ -68,6 +68,7 @@ type Client struct {
 	// replacing is set while this process replaces its own binary, so that the
 	// update record it writes is left to the next process.
 	replacing atomic.Bool
+	metadata  *metadataDetector
 }
 
 type Enrollment struct {
@@ -104,6 +105,7 @@ func New(config Config) (*Client, error) {
 		traffic:    &traffic.Collector{ProcRoot: "/proc", Accounting: &traffic.Accounting{}},
 		executable: executable,
 		run:        runCommand,
+		metadata:   &metadataDetector{},
 	}, nil
 }
 
@@ -111,7 +113,7 @@ func Enroll(ctx context.Context, panelURL, enrollmentToken string, allowInsecure
 	if err := validatePanelURL(panelURL, allowInsecureHTTP); err != nil {
 		return Enrollment{}, err
 	}
-	network := localNetworkReport()
+	network := collectNetworkReport(ctx, &metadataDetector{})
 	body, _ := json.Marshal(struct {
 		EnrollmentToken string   `json:"enrollment_token"`
 		PublicAddresses []string `json:"public_addresses"`
@@ -145,12 +147,41 @@ func Enroll(ctx context.Context, panelURL, enrollmentToken string, allowInsecure
 	return enrollment, nil
 }
 
-func localNetworkReport() networkReport {
+func collectNetworkReport(ctx context.Context, detector *metadataDetector) networkReport {
 	addresses, err := net.InterfaceAddrs()
 	if err != nil {
 		return networkReport{}
 	}
-	return networkReportFromAddresses(addresses)
+	return networkReportWithMetadata(ctx, addresses, detector)
+}
+
+func networkReportWithMetadata(ctx context.Context, addresses []net.Addr, detector *metadataDetector) networkReport {
+	report := networkReportFromAddresses(addresses)
+	if detector == nil || !hasNetworkItem(report.EgressFamilies, "ipv4") || hasPublicIPv4(report.PublicAddresses) {
+		return report
+	}
+	if publicIPv4 := detector.publicIPv4(ctx); publicIPv4 != "" {
+		report.PublicAddresses = append([]string{publicIPv4}, report.PublicAddresses...)
+	}
+	return report
+}
+
+func hasNetworkItem(values []string, target string) bool {
+	for _, value := range values {
+		if value == target {
+			return true
+		}
+	}
+	return false
+}
+
+func hasPublicIPv4(addresses []string) bool {
+	for _, value := range addresses {
+		if ip := net.ParseIP(value); ip != nil && ip.To4() != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func networkReportFromAddresses(addresses []net.Addr) networkReport {
@@ -836,7 +867,10 @@ func (c *Client) request(ctx context.Context, method, path string, body io.Reade
 	request.Header.Set("Authorization", "Bearer "+c.config.AgentToken)
 	request.Header.Set("X-Portolan-Server-ID", c.config.ServerID)
 	request.Header.Set("User-Agent", "portolan-agent/"+buildinfo.Version)
-	network := localNetworkReport()
+	if c.metadata == nil {
+		c.metadata = &metadataDetector{}
+	}
+	network := collectNetworkReport(ctx, c.metadata)
 	request.Header.Set(publicAddressesHeader, headerList(network.PublicAddresses))
 	request.Header.Set(egressFamiliesHeader, headerList(network.EgressFamilies))
 	return request, nil

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net"
 	"net/http"
 	"strconv"
@@ -42,16 +43,26 @@ func (s *Server) enrollAgent(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if s.regionLookup != nil {
-		region, lookupErr := s.regionLookup(observedAddress)
-		if lookupErr != nil {
-			s.logger.Warn("automatic server location lookup failed", "server_id", serverID, "error", lookupErr)
-		} else if region != "" {
-			if updateErr := s.store.SetServerRegionIfBlank(r.Context(), serverID, region); updateErr != nil {
-				s.logger.Warn("automatic server location update failed", "server_id", serverID, "error", updateErr)
-			}
-		}
+		s.lookupAndSetBlankRegion(r.Context(), serverID, observedAddress)
 	}
 	writeJSON(w, http.StatusCreated, map[string]any{"server_id": serverID, "agent_token": token})
+}
+
+func (s *Server) lookupAndSetBlankRegion(ctx context.Context, serverID, address string) {
+	if s.regionLookup == nil || address == "" {
+		return
+	}
+	region, err := s.regionLookup(address)
+	if err != nil {
+		s.logger.Warn("automatic server location lookup failed", "server_id", serverID, "error", err)
+		return
+	}
+	if region == "" {
+		return
+	}
+	if err := s.store.SetServerRegionIfBlank(ctx, serverID, region); err != nil {
+		s.logger.Warn("automatic server location update failed", "server_id", serverID, "error", err)
+	}
 }
 
 func preferredAgentAddress(observed string, reported []string) string {
