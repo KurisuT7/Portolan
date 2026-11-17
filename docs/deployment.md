@@ -47,8 +47,8 @@ curl http://127.0.0.1:8088/healthz
 
 ```bash
 sha256sum -c --ignore-missing SHA256SUMS
-tar -xzf portolan_0.4.1_linux_amd64.tar.gz
-sudo sh portolan_0.4.1_linux_amd64/install-panel.sh --public-url https://panel.example.com
+tar -xzf portolan_0.4.2_linux_amd64.tar.gz
+sudo sh portolan_0.4.2_linux_amd64/install-panel.sh --public-url https://panel.example.com
 ```
 
 从解压目录运行时，脚本安装该目录里的文件。
@@ -60,7 +60,7 @@ sudo sh portolan_0.4.1_linux_amd64/install-panel.sh --public-url https://panel.e
 
 ```bash
 mkdir portolan && cd portolan
-curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.4.1/compose.yaml
+curl -fsSLO https://raw.githubusercontent.com/KurisuT7/Portolan/v0.4.2/compose.yaml
 printf 'PORTOLAN_MASTER_KEY=%s\nPORTOLAN_ADMIN_TOKEN=%s\nPORTOLAN_PUBLIC_URL=https://panel.example.com\n' \
   "$(openssl rand -base64 32)" "$(openssl rand -base64 32)" > panel.env
 chmod 600 panel.env
@@ -124,9 +124,23 @@ server {
 ```
 
 面板只信任本机代理附加的 `X-Forwarded-For`，从右往左取第一个不受信任的地址作为客户端
-地址，用于登录限速、日志和 Agent 注册。代理前面还有 CDN 时，把 CDN 的地址段同时加入
-代理和 `PORTOLAN_TRUSTED_PROXIES` 的信任列表，否则面板记录到的是 CDN 节点的地址，
-同一个 CDN 节点后面的所有人会共用一个登录失败计数。
+地址，用于登录限速、日志和 Agent 注册。代理前面还有 Cloudflare 等 CDN 时，把 CDN 的地址段同时加入
+代理和 `PORTOLAN_TRUSTED_PROXIES` 的信任列表（可直接写 `cloudflare` 预设）；否则 Caddy 会把
+`X-Forwarded-For` 覆盖成 CDN 节点地址，面板也会按 CDN 节点记录来源地址、并让同一节点后的所有访问共用登录失败计数：
+
+```caddyfile
+panel.example.com {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:8088 {
+		# 套 Cloudflare 时把 https://www.cloudflare.com/ips-v4 和 ips-v6 列出的网段写入这里
+		trusted_proxies 173.245.48.0/20 103.21.244.0/22 ...
+	}
+	header Strict-Transport-Security "max-age=31536000"
+}
+```
+
+同时在 `/etc/portolan-panel/panel.env`（或 `compose.yaml`）里设置 `PORTOLAN_TRUSTED_PROXIES=cloudflare`。
+如果只设了一侧，面板日志会在收到带 `CF-Connecting-IP` 的请求时提示缺漏的那一侧。
 
 ## 环境变量
 
@@ -139,7 +153,7 @@ server {
 | `PORTOLAN_DATABASE` | `portolan.db` | SQLite 数据库路径。核心压缩包保存在同目录的 `cores/` 下，该目录必须可写。安装脚本和镜像设为 `/var/lib/portolan-panel/portolan.db`。 |
 | `PORTOLAN_DOWNLOADS_DIR` | 可执行文件旁的 `downloads/` | 提供给节点的 Agent 和安装器所在目录。未找到时面板不能生成安装命令。 |
 | `PORTOLAN_GEOIP_DB` | 不启用 | 本地 MMDB 文件路径，用来识别服务器地区。 |
-| `PORTOLAN_TRUSTED_PROXIES` | 仅本机 | 额外信任的反向代理，逗号分隔的地址或 CIDR。 |
+| `PORTOLAN_TRUSTED_PROXIES` | 仅本机 | 额外信任的反向代理，逗号分隔的地址、CIDR 或预设名 `cloudflare`。 |
 | `PORTOLAN_SECURE_COOKIES` | `true` | 只在本机用 HTTP 测试时设为 `false`。 |
 
 安装脚本在服务文件里设置 `PORTOLAN_DEPLOYMENT=systemd`，镜像设置为 `docker`，控制台据此说明
@@ -190,7 +204,7 @@ sing-box、Realm，逐个按 SHA-256 校验。安装内容：
 - 已有节点或转发的端口不在新映射内时，保存会被拒绝并列出它们。Agent 发现的只读节点不受限制，但端口
   不在映射内时不能导出链接。
 
-所有端口都可以从公网直接访问的机器（包括云厂商弹性 IP 这类 1:1 NAT）不用填写映射。
+所有端口都可以从公网直接访问的机器（包括云厂商弹性 IP 这类 1:1 NAT）不用填写映射。GCP、AWS、Azure 等 1:1 NAT 云主机网卡上只有内网 IPv4 时，Agent 会通过本机实例元数据服务（`169.254.169.254`）自动识别并同步公网 IPv4。
 
 卸载节点上的 Portolan（会停止该服务器上 Portolan 管理的全部节点和转发），然后在面板里删除
 这台服务器：

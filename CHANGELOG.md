@@ -6,6 +6,18 @@
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-11-18
+
+### 新增
+
+- `PORTOLAN_TRUSTED_PROXIES` 支持填写 `cloudflare` 预设，直接展开 Cloudflare 官方 IPv4/IPv6 网段。
+- 请求带 `CF-Connecting-IP` 但解析出的来源仍是 Cloudflare 节点地址时，面板日志会发出一次警告，提示补充 `PORTOLAN_TRUSTED_PROXIES` 或反向代理 `trusted_proxies` 配置。
+
+### 修复
+
+- GCP、AWS、Azure 等 1:1 VPC NAT 云主机网卡上只有内网 IPv4 时，Agent 会从本机链路实例元数据（`169.254.169.254`）读取公网 IPv4 并随注册与心跳上报，避免双栈机器丢失公网 IPv4，或面板套 CDN 且未配透传时读成 CDN 节点地址，也不会污染 CGNAT 机器的地址判断。
+- 全部 `X-Forwarded-For` 跳点都属于受信任代理时，面板保留最外层有效跳点地址，不再退回 `127.0.0.1`；Agent 后续心跳补齐公网地址时，也会为地区仍为空的服务器自动补识别地区。
+
 ## [0.4.1] - 2026-10-26
 
 ### 新增
@@ -142,7 +154,8 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/KurisuT7/Portolan/releases/tag/v0.4.2
 [0.4.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.4.1
 [0.4.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.4.0
 [0.3.3]: https://github.com/KurisuT7/Portolan/releases/tag/v0.3.3
