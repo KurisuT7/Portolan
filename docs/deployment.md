@@ -132,8 +132,8 @@ server {
 panel.example.com {
 	encode zstd gzip
 	reverse_proxy 127.0.0.1:8088 {
-		# 套 Cloudflare 时把 https://www.cloudflare.com/ips-v4 和 ips-v6 列出的网段写入这里
-		trusted_proxies 173.245.48.0/20 103.21.244.0/22 ...
+		# 套 Cloudflare 时换成 https://www.cloudflare.com/ips-v4 和 ips-v6 列出的全部网段
+		trusted_proxies 198.51.100.0/24 2001:db8::/32
 	}
 	header Strict-Transport-Security "max-age=31536000"
 }
@@ -204,7 +204,7 @@ sing-box、Realm，逐个按 SHA-256 校验。安装内容：
 - 已有节点或转发的端口不在新映射内时，保存会被拒绝并列出它们。Agent 发现的只读节点不受限制，但端口
   不在映射内时不能导出链接。
 
-所有端口都可以从公网直接访问的机器（包括云厂商弹性 IP 这类 1:1 NAT）不用填写映射。GCP、AWS、Azure 等 1:1 NAT 云主机网卡上只有内网 IPv4 时，Agent 会通过本机实例元数据服务（`169.254.169.254`）自动识别并同步公网 IPv4。
+所有端口都可以从公网直接访问的机器（包括云厂商弹性 IP 这类 1:1 NAT）不用填写映射；GCP、AWS、Azure 等云主机网卡上只有内网 IPv4 时，Agent 会从云厂商的本机元数据服务自动读取并同步公网 IPv4。
 
 卸载节点上的 Portolan（会停止该服务器上 Portolan 管理的全部节点和转发），然后在面板里删除
 这台服务器：
