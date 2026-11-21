@@ -6,6 +6,8 @@
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-11-22
+
 ### 新增
 
 - Shadowsocks 节点除了 `ss://` 链接，还可以复制 Surge 配置行：节点列表和转发页的复制按钮会让你选「链接」或
@@ -166,7 +168,8 @@
 - 只有一个管理员账号。
 - 节点只支持使用 systemd 的 x86_64/aarch64 Linux。
 
-[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/KurisuT7/Portolan/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/KurisuT7/Portolan/releases/tag/v0.4.3
 [0.4.2]: https://github.com/KurisuT7/Portolan/releases/tag/v0.4.2
 [0.4.1]: https://github.com/KurisuT7/Portolan/releases/tag/v0.4.1
 [0.4.0]: https://github.com/KurisuT7/Portolan/releases/tag/v0.4.0
