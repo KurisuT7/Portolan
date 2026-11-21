@@ -30,7 +30,7 @@ Portolan 的协议模型以 sing-box 官方配置结构为准，不复用第三�
 
 密码会按方法生成；2022 方法使用匹配密钥长度的随机材料。`none` 没有加密，必须在 UI 和 API 中同时显式设置 `allow_insecure`。
 
-导出遵循 [SIP002](https://shadowsocks.org/doc/sip002.html)：2022 方法的 `method:password` 使用百分号编码，其他方法使用 Base64URL。
+导出遵循 [SIP002](https://shadowsocks.org/doc/sip002.html)：2022 方法的 `method:password` 使用百分号编码，其他方法使用 Base64URL。同时导出 Surge 配置行：密码加双引号，并带 `udp-relay=true`（Surge 默认不转发 UDP）。Surge 不支持 `2022-blake3-chacha20-poly1305`，这种节点只导出链接（参见 [Surge Shadowsocks 参数](https://manual.nssurge.com/policies/shadowsocks.html)）。
 
 ## Snell
 
@@ -51,7 +51,7 @@ Shadowsocks 和 Snell 节点可以在创建时套一层 sing-box 官方 [ShadowT
 - 只用 v3，并开启 `strict_mode`，握手服务器必须支持 TLS 1.3。握手域名同时是客户端发送的 SNI，必须是域名而非 IP；默认 `aws.amazon.com:443`。
 - 节点端口的 TCP 由 ShadowTLS 监听，认证通过的连接交给内层协议入站（`detour`）。Shadowsocks 的 UDP 仍监听同一端口，客户端默认把 UDP 发到这里；Snell 没有 UDP 监听，内层入站只占用一个本机回环端口。
 - 密码随机生成。
-- 导出：Shadowsocks 在 SIP002 链接里写 `plugin=shadow-tls;host=<握手域名>;password=<密码>;version=3`；Snell 的 Surge 配置行追加 `shadow-tls-password`、`shadow-tls-sni` 和 `shadow-tls-version=3`（参见 [Surge Shadow TLS 参数](https://manual.nssurge.com/policies/tls.html)）。
+- 导出：Shadowsocks 在 SIP002 链接里写 `plugin=shadow-tls;host=<握手域名>;password=<密码>;version=3`；Shadowsocks 和 Snell 的 Surge 配置行追加 `shadow-tls-password`、`shadow-tls-sni` 和 `shadow-tls-version=3`（参见 [Surge Shadow TLS 参数](https://manual.nssurge.com/policies/tls.html)）。mihomo 直接导入 `ss://` 链接时会丢弃 `shadow-tls` 插件参数，需要经 Sub-Store 等能识别该参数的工具转换。
 - 旧版 Agent 不认识这一层，会只部署内层协议，所以面板拒绝在 Agent 早于 v0.4.1 的服务器上创建这类节点。
 
 ## 增加协议方法

@@ -1,22 +1,39 @@
 "use client";
 
-import { Fragment, useState, type FormEvent, type ReactNode } from "react";
-import { Check, Link2, Pencil, Plus, Trash2 } from "lucide-react";
-import { ApiError, type ApiForward, type ApiNode, type ApiNodeSettings, type ClientExport, type SavedNode } from "../lib/api";
+import { Fragment, useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
+import { Check, ChevronDown, Link2, Pencil, Plus, Trash2, X } from "lucide-react";
+import { ApiError, type ApiForward, type ApiNode, type ApiNodeSettings, type ApiServer, type ClientExport, type SavedNode } from "../lib/api";
 import { displayPort, publicPort, serverHost } from "../lib/endpoints";
 import { regionParts } from "../lib/fleet";
-import { byteLength } from "../lib/format";
-import { natPortHint } from "../lib/nat";
-import { displayNodeProfile, groupNodesByServer, nodeFormValues, protocolLabels } from "../lib/nodes";
+import { hostRanges, natPortHint } from "../lib/nat";
+import {
+  batchClientExports,
+  buildNodeRequest,
+  clientFormatChoices,
+  clientFormatLabels,
+  clientFormats,
+  createNodeDraft,
+  defaultNodeName,
+  displayNodeProfile,
+  draftNeedsUnsafeConfirm,
+  groupNodesByServer,
+  nextDraftProtocol,
+  nodeProtocols,
+  protocolLabels,
+  validateNodeDrafts,
+  type ClientFormat,
+  type NodeDraft,
+} from "../lib/nodes";
 import { routeHref } from "../lib/routing";
 import { configurationState, serverState, singBoxUnit, unitState } from "../lib/status";
 import { cycleWord, formatBytes, portsCounted, totalBytes, trafficOf } from "../lib/traffic";
 import { api, errorText, useFleet } from "./data";
 import { navigate } from "./hooks";
-import { CodeBlock, ConfirmDelete, copyText, Dialog, Empty, ErrorText, Field, PageHeader, ProtocolTag, SearchInput, Segmented, Spinner, Status, toast, useCopied } from "./ui";
+import { CodeBlock, ConfirmDelete, CopyButton, copyText, Dialog, Empty, ErrorText, Field, MenuButton, PageHeader, ProtocolTag, SearchInput, Segmented, Spinner, Status, toast, useCopied } from "./ui";
 
 type Protocol = ApiNode["protocol"];
-const protocols: Protocol[] = ["vless-reality", "shadowsocks", "snell"];
+const protocols = nodeProtocols;
+const maxBatchNodes = 32;
 const shadowsocksMethods = [
   "2022-blake3-aes-128-gcm",
   "2022-blake3-aes-256-gcm",
@@ -77,36 +94,86 @@ export function NodesPage({ server }: { server?: string }) {
 export function useNodeLink() {
   const { index } = useFleet();
   const [copied, setCopied] = useCopied();
-  const [fallback, setFallback] = useState<{ title: string; value: string } | null>(null);
-  async function copyLink(node: ApiNode, forward?: ApiForward) {
+  const [fallback, setFallback] = useState<{ title: string; surge: boolean; value: string } | null>(null);
+  async function copyLink(node: ApiNode, forward?: ApiForward, format?: ClientFormat) {
     const ingress = forward ? index.servers.get(forward.ingress_server_id) : undefined;
     const address = serverHost(ingress);
     const port = forward ? publicPort(ingress, address, forward.listen_port) : null;
     if (forward && port == null) return toast(`入口端口 ${forward.listen_port} 不在 NAT 端口映射内`, "bad");
     const endpoint = forward && port != null ? { address, port, name: node.name } : undefined;
-    const request = api.exportNode(node.id, endpoint).then(exportValue);
+    const surge = format === "surge";
+    const request = api.exportNode(node.id, endpoint).then((client) => {
+      if (surge && !client.surge_line) throw new Error("Surge 不支持这个节点的加密方式");
+      return surge ? client.surge_line! : exportValue(client);
+    });
     try {
       await copyText(request);
       setCopied(forward?.id ?? node.id);
-      toast(forward ? "已复制经入口连接的客户端链接" : "已复制节点链接");
+      const what = surge ? " Surge 配置" : forward ? "客户端链接" : "节点链接";
+      toast(forward ? `已复制经入口连接的${what}` : `已复制${what}`);
     } catch {
       try {
-        setFallback({ title: node.name, value: await request });
+        setFallback({ title: node.name, surge, value: await request });
       } catch (failure) {
         toast(errorText(failure), "bad");
       }
     }
   }
   const dialog: ReactNode = fallback && (
-    <Dialog title="节点链接" onClose={() => setFallback(null)}>
+    <Dialog title={fallback.surge ? "Surge 配置" : "节点链接"} onClose={() => setFallback(null)}>
       <div className="dialog-body">
         <p><strong>{fallback.title}</strong></p>
-        <CodeBlock value={fallback.value} label="复制链接" />
+        <CodeBlock value={fallback.value} label={fallback.surge ? "复制 Surge 配置" : "复制链接"} />
         <p className="hint">包含连接密钥，请勿公开分享。</p>
       </div>
     </Dialog>
   );
   return { copyLink, copied, dialog };
+}
+
+// Copies the client configuration of node, through forward when given. A
+// protocol with several forms lets the user pick one.
+export function NodeLinkButton({ link, node, forward, label, title, disabled }: {
+  link: ReturnType<typeof useNodeLink>;
+  node: ApiNode;
+  forward?: ApiForward;
+  label: string;
+  title?: string;
+  disabled?: boolean;
+}) {
+  const copied = link.copied === (forward?.id ?? node.id);
+  const content = <>{copied ? <Check size={14} /> : <Link2 size={14} />}{copied ? "已复制" : label}</>;
+  const formats = clientFormatChoices(node);
+  if (!formats.length) {
+    return <button className="btn btn-sm" title={title} disabled={disabled} onClick={() => void link.copyLink(node, forward)}>{content}</button>;
+  }
+  return (
+    <MenuButton
+      label={label}
+      title={title}
+      disabled={disabled}
+      items={formats.map((format) => ({ label: clientFormatLabels[format], onSelect: () => void link.copyLink(node, forward, format) }))}
+    >
+      {content}
+      <ChevronDown size={13} aria-hidden="true" />
+    </MenuButton>
+  );
+}
+
+// Each form of a node's client configuration, with its own copy button.
+function ClientExports({ name, client }: { name: string; client: ClientExport }) {
+  const forms = clientFormats(client);
+  if (!forms.length) return <p className="hint">服务器地址识别后可在节点列表复制链接。</p>;
+  return (
+    <>
+      {forms.map(({ format, value }) => (
+        <div className="client-export" key={format}>
+          <span>{clientFormatLabels[format]}</span>
+          <CodeBlock value={value} label={`复制 ${name} ${clientFormatLabels[format]}`} />
+        </div>
+      ))}
+    </>
+  );
 }
 
 export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped?: boolean }) {
@@ -170,10 +237,7 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
                         {counted && `${cycleWord(server)} ${formatBytes(traffic ? totalBytes(traffic) : 0)}`}
                       </span>
                       <div className="node-actions">
-                        <button className="btn btn-sm" disabled={!!errors.nodes} onClick={() => void link.copyLink(node)}>
-                          {link.copied === node.id ? <Check size={14} /> : <Link2 size={14} />}
-                          {link.copied === node.id ? "已复制" : "复制链接"}
-                        </button>
+                        <NodeLinkButton link={link} node={node} label="复制链接" disabled={!!errors.nodes} />
                         {node.managed && (
                           <button className="icon-btn" disabled={!!errors.nodes || !!opening} aria-label={`编辑 ${node.name}`} title="编辑" onClick={() => void edit(node)}>
                             {opening === node.id ? <Spinner size={15} /> : <Pencil size={15} />}
@@ -213,113 +277,251 @@ export function NodeList({ nodes, grouped = false }: { nodes: ApiNode[]; grouped
   );
 }
 
-type Created = { id: string; protocol: Protocol; name: string; client: ClientExport };
+type CreatedItem = { id: string; protocol: Protocol; name: string; port: number; client: ClientExport };
+type CreatedResult = { items: CreatedItem[]; updatedAt: string };
 
-// With initial the form edits that node; otherwise it creates one node per selected protocol.
+const protocolOptions = protocols.map((value) => ({ value, label: protocolLabels[value] }));
+
+// Renders the shared per-node configuration fields for both single-node editing and multi-node creation cards.
+function NodeDraftFields({ draft, drafts, index, server, editing, onChange }: {
+  draft: NodeDraft;
+  drafts: NodeDraft[];
+  index: number;
+  server?: ApiServer;
+  editing: boolean;
+  onChange: (patch: Partial<NodeDraft>) => void;
+}) {
+  const placeholderName = editing ? (server?.name || "节点名称") : defaultNodeName({ ...draft, name: "" }, drafts, index, server?.name);
+  const portHint = editing
+    ? ["修改后原端口停止监听", natPortHint(server, draft.port)].filter(Boolean).join(" · ") || undefined
+    : draft.port.trim() ? natPortHint(server, draft.port) : undefined;
+  const unsafe = draftNeedsUnsafeConfirm(draft);
+
+  return (
+    <>
+      <div className="node-draft-grid">
+        <Field label="名称">
+          <input value={draft.name} onChange={(event) => onChange({ name: event.target.value })} placeholder={placeholderName} />
+        </Field>
+        <Field label="端口" hint={portHint}>
+          <input
+            type="number"
+            min={1}
+            max={65535}
+            value={draft.port}
+            onChange={(event) => onChange({ port: event.target.value })}
+            required={editing}
+            placeholder="自动分配"
+          />
+        </Field>
+        {draft.protocol === "vless-reality" && (
+          <Field label="Reality 握手域名">
+            <input value={draft.handshake} onChange={(event) => onChange({ handshake: event.target.value })} required spellCheck={false} />
+          </Field>
+        )}
+        {draft.protocol === "shadowsocks" && (
+          <Field label="Shadowsocks 加密">
+            <select
+              value={draft.method}
+              onChange={(event) => onChange({ method: event.target.value, allowUnsafe: false })}
+            >
+              {shadowsocksMethods.map((item) => <option key={item} value={item}>{item === "none" ? "none（不加密）" : item}</option>)}
+            </select>
+          </Field>
+        )}
+        {draft.protocol === "snell" && (
+          <Field label="Snell 版本">
+            <select
+              value={draft.snellVersion}
+              onChange={(event) => {
+                const version = Number(event.target.value) as 5 | 6;
+                onChange({ snellVersion: version, snellMode: version === 5 ? "" : "default", allowUnsafe: false });
+              }}
+            >
+              <option value={6}>v6</option>
+              <option value={5}>v5</option>
+            </select>
+          </Field>
+        )}
+      </div>
+
+      {draft.protocol !== "vless-reality" && (
+        <label className="check">
+          <input type="checkbox" checked={draft.shadowTLS} onChange={(event) => onChange({ shadowTLS: event.target.checked })} />
+          用 ShadowTLS 包装
+        </label>
+      )}
+      {draft.protocol !== "vless-reality" && draft.shadowTLS && (
+        <div className="form-grid">
+          <Field label="ShadowTLS 握手域名" hint="需支持 TLS 1.3">
+            <input value={draft.shadowTLSServer} onChange={(event) => onChange({ shadowTLSServer: event.target.value })} required spellCheck={false} />
+          </Field>
+          <Field label="ShadowTLS 握手端口">
+            <input type="number" min={1} max={65535} value={draft.shadowTLSPort} onChange={(event) => onChange({ shadowTLSPort: event.target.value })} required />
+          </Field>
+        </div>
+      )}
+
+      {(draft.protocol === "vless-reality" || draft.protocol === "snell") && (
+        <details className="advanced">
+          <summary>高级参数</summary>
+          {draft.protocol === "vless-reality" ? (
+            <div className="node-draft-grid">
+              <Field label="握手端口">
+                <input type="number" min={1} max={65535} value={draft.handshakePort} onChange={(event) => onChange({ handshakePort: event.target.value })} required />
+              </Field>
+              <Field label="传输">
+                <select value={draft.transport} onChange={(event) => onChange({ transport: event.target.value })}>
+                  <option value="tcp">TCP</option>
+                  <option value="grpc">gRPC</option>
+                </select>
+              </Field>
+              {draft.transport === "tcp" ? (
+                <Field label="Flow">
+                  <select value={draft.flow} onChange={(event) => onChange({ flow: event.target.value })}>
+                    <option value="xtls-rprx-vision">xtls-rprx-vision</option>
+                    <option value="">无</option>
+                  </select>
+                </Field>
+              ) : (
+                <Field label="Service Name">
+                  <input value={draft.serviceName} onChange={(event) => onChange({ serviceName: event.target.value })} placeholder="可留空" spellCheck={false} />
+                </Field>
+              )}
+            </div>
+          ) : (
+            <div className="form-grid">
+              <Field label={draft.snellVersion === 5 ? "Snell 混淆" : "Snell 模式"}>
+                <select
+                  value={draft.snellMode}
+                  onChange={(event) => onChange({ snellMode: event.target.value, allowUnsafe: false })}
+                >
+                  {draft.snellVersion === 5 ? (
+                    <>
+                      <option value="">无</option>
+                      <option value="http">HTTP</option>
+                    </>
+                  ) : (
+                    <>
+                      <option value="default">default</option>
+                      <option value="unshaped">unshaped</option>
+                      <option value="unsafe-raw">unsafe-raw（不加密）</option>
+                    </>
+                  )}
+                </select>
+              </Field>
+            </div>
+          )}
+        </details>
+      )}
+
+      {unsafe && (
+        <label className="check check-warn">
+          <input type="checkbox" checked={draft.allowUnsafe} onChange={(event) => onChange({ allowUnsafe: event.target.checked })} required />
+          <span>这条链路已有其他加密保护，允许使用不加密模式。</span>
+        </label>
+      )}
+    </>
+  );
+}
+
+// With initial the form edits that node; otherwise it creates a batch of independent node drafts on one server.
 export function NodeForm({ serverId: initialServer, initial, onClose }: { serverId?: string; initial?: ApiNodeSettings; onClose: () => void }) {
   const { data, errors, index, now, refresh } = useFleet();
-  const start = nodeFormValues(initial);
   const [serverId, setServerId] = useState(initial?.server_id || initialServer || data.servers[0]?.id || "");
-  const [selected, setSelected] = useState<Protocol[]>([start.protocol]);
-  const [name, setName] = useState(start.name);
-  const [port, setPort] = useState(start.port);
-  const [handshake, setHandshake] = useState(start.handshake);
-  const [handshakePort, setHandshakePort] = useState(start.handshakePort);
-  const [transport, setTransport] = useState(start.transport);
-  const [flow, setFlow] = useState(start.flow);
-  const [serviceName, setServiceName] = useState(start.serviceName);
-  const [method, setMethod] = useState(start.method);
-  const [snellVersion, setSnellVersion] = useState<5 | 6>(start.snellVersion);
-  const [snellMode, setSnellMode] = useState(start.snellMode);
-  const [shadowTLS, setShadowTLS] = useState(start.shadowTLS);
-  const [shadowTLSServer, setShadowTLSServer] = useState(start.shadowTLSServer);
-  const [shadowTLSPort, setShadowTLSPort] = useState(start.shadowTLSPort);
-  const [allowUnsafe, setAllowUnsafe] = useState(start.allowUnsafe);
+  const [drafts, setDrafts] = useState<NodeDraft[]>(() => [
+    createNodeDraft("draft-1", initial?.protocol ?? "vless-reality", initial),
+  ]);
   const [rotate, setRotate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [created, setCreated] = useState<Created[]>([]);
+  const [errorIndex, setErrorIndex] = useState<number | null>(null);
+  const [createdResult, setCreatedResult] = useState<CreatedResult | null>(null);
   const [saved, setSaved] = useState<(SavedNode & { name: string; port: number }) | null>(null);
   const [uncertain, setUncertain] = useState(false);
+  const nextDraftKey = useRef(2);
+  const scrollToKey = useRef<string | null>(null);
+  const cardRefs = useRef(new Map<string, HTMLDivElement>());
+
+  useEffect(() => {
+    if (!scrollToKey.current) return;
+    const key = scrollToKey.current;
+    scrollToKey.current = null;
+    cardRefs.current.get(key)?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [drafts]);
+
   const server = data.servers.find((item) => item.id === serverId);
-  const done = new Set(created.map((item) => item.protocol));
-  const remaining = selected.filter((protocol) => !done.has(protocol));
-  const locked = created.length > 0;
-  const unsafe = (remaining.includes("shadowsocks") && method === "none") || (remaining.includes("snell") && snellVersion === 6 && snellMode === "unsafe-raw");
-  // ShadowTLS wraps the TCP-based protocols only.
-  const wrappable = remaining.filter((protocol) => protocol !== "vless-reality");
-  const wrapped = shadowTLS && wrappable.length > 0;
+  const occupiedPorts = new Set<number>([
+    ...(index.nodesByServer.get(serverId) ?? [])
+      .filter((node) => node.id !== initial?.id)
+      .map((node) => node.listen_port),
+    ...(index.forwardsByIngress.get(serverId) ?? []).map((forward) => forward.listen_port),
+  ]);
 
-  function toggle(protocol: Protocol) {
-    setSelected((current) => {
-      if (!current.includes(protocol)) return protocols.filter((item) => item === protocol || current.includes(item));
-      return current.length > 1 ? current.filter((item) => item !== protocol) : current;
-    });
+  function updateDraft(draftIndex: number, patch: Partial<NodeDraft>) {
+    setDrafts((current) => current.map((item, position) => (position === draftIndex ? { ...item, ...patch } : item)));
+    setError("");
+    setErrorIndex(null);
   }
 
-  function nodeName(protocol: Protocol) {
-    const base = name.trim() || server?.name || protocolLabels[protocol];
-    return selected.length > 1 ? `${base} ${protocolLabels[protocol]}` : base;
+  function addDraft() {
+    if (drafts.length >= maxBatchNodes) return;
+    const key = `draft-${nextDraftKey.current++}`;
+    scrollToKey.current = key;
+    setDrafts((current) => [...current, createNodeDraft(key, nextDraftProtocol(current))]);
+    setError("");
+    setErrorIndex(null);
   }
 
-  function request(protocol: Protocol) {
-    const common = { name: nodeName(protocol), listen_port: selected.length === 1 ? Number(port) || 0 : 0 };
-    if (protocol === "vless-reality") {
-      return {
-        ...common,
-        reality: {
-          flow: transport === "tcp" ? flow : "",
-          handshake_server: handshake.trim(),
-          handshake_port: Number(handshakePort),
-          server_name: handshake.trim(),
-          // Settings the form does not show keep their stored values.
-          fingerprint: initial?.reality?.fingerprint || "chrome",
-          max_time_difference: initial?.reality?.max_time_difference,
-          transport,
-          transport_settings: transport === "grpc" && serviceName.trim() ? { service_name: serviceName.trim() } : {},
-        },
-      };
-    }
-    const wrapper = wrapped ? { shadow_tls: { handshake_server: shadowTLSServer.trim(), handshake_port: Number(shadowTLSPort) } } : {};
-    if (protocol === "shadowsocks") return { ...common, ...wrapper, shadowsocks: { method, allow_insecure: method === "none" && allowUnsafe } };
-    return {
-      ...common,
-      ...wrapper,
-      snell: {
-        version: snellVersion,
-        ...(snellVersion === 5 ? { obfs_mode: snellMode } : { mode: snellMode }),
-        allow_insecure: snellMode === "unsafe-raw" && allowUnsafe,
-      },
-    };
+  function removeDraft(draftIndex: number) {
+    if (drafts.length <= 1) return;
+    setDrafts((current) => current.filter((_, position) => position !== draftIndex));
+    setError("");
+    setErrorIndex(null);
   }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (remaining.some((protocol) => byteLength(nodeName(protocol)) > 96)) {
-      setError("名称过长：最多 96 字节（约 32 个汉字），多协议时会追加协议名。");
+    const validation = validateNodeDrafts(drafts, server?.name, occupiedPorts);
+    if (validation) {
+      setErrorIndex(validation.index);
+      setError(validation.message);
       return;
     }
     setBusy(true);
     setError("");
+    setErrorIndex(null);
     try {
       if (initial) {
-        const settings = request(initial.protocol);
+        const draft = drafts[0];
+        const finalName = draft.name.trim() || server?.name || protocolLabels[initial.protocol];
+        const settings = buildNodeRequest(draft, finalName, initial);
         const result = await api.updateNode(initial.id, { ...settings, rotate_credentials: rotate });
-        setSaved({ ...result, name: settings.name, port: settings.listen_port });
+        setSaved({ ...result, name: finalName, port: Number(draft.port) || initial.listen_port });
       } else {
-        for (const protocol of remaining) {
-          const result = await api.createNode({ server_id: serverId, protocol, ...request(protocol) });
-          const item = { id: result.id, protocol, name: nodeName(protocol), client: result.client };
-          setCreated((current) => [...current, item]);
-        }
-        toast(remaining.length > 1 ? `已创建 ${remaining.length} 个节点` : "节点已创建");
+        const nodesPayload = drafts.map((draft, position) =>
+          buildNodeRequest(draft, defaultNodeName(draft, drafts, position, server?.name)),
+        );
+        const result = await api.createNodes({ server_id: serverId, nodes: nodesPayload });
+        const items: CreatedItem[] = result.items.map((item, position) => ({
+          id: item.id,
+          protocol: item.protocol ?? drafts[position].protocol,
+          name: item.name ?? defaultNodeName(drafts[position], drafts, position, server?.name),
+          port: item.listen_port ?? (Number(drafts[position].port) || 0),
+          client: item.client,
+        }));
+        setCreatedResult({ items, updatedAt: result.updated_at });
+        toast(items.length > 1 ? `已创建 ${items.length} 个节点` : "节点已创建");
       }
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 0) {
         setUncertain(true);
         setError(initial ? "连接中断，无法确认是否已保存。请关闭窗口核对节点列表。" : "连接中断，无法确认是否已创建。请关闭窗口核对节点列表，不要直接重试。");
       } else {
-        setError(errorText(failure));
+        const message = errorText(failure);
+        const match = /^第 (\d+) 个节点：/.exec(message);
+        setErrorIndex(match ? Number(match[1]) - 1 : null);
+        setError(message);
       }
     } finally {
       await refresh();
@@ -328,14 +530,13 @@ export function NodeForm({ serverId: initialServer, initial, onClose }: { server
   }
 
   if (saved && initial) {
-    const link = exportValue(saved.client);
     // Forwards to the node dial its new port, so their ingress servers apply the change too.
     const ingress = saved.port === initial.listen_port ? [] : data.forwards.filter((forward) => forward.target_node_id === initial.id).map((forward) => forward.ingress_server_id);
     return (
       <Dialog title="已保存" onClose={onClose}>
         <div className="dialog-body">
           <div className="saved"><Check size={18} aria-hidden="true" /><strong>{saved.name}</strong></div>
-          {link ? <CodeBlock value={link} label={`复制 ${saved.name}`} /> : <p className="hint">服务器地址识别后可在节点列表复制链接。</p>}
+          <ClientExports name={saved.name} client={saved.client} />
           <dl className="facts facts-compact">
             {[...new Set([serverId, ...ingress])].map((id) => {
               const config = configurationState(index.config.get(id), !!errors.config, now, saved.updated_at);
@@ -355,164 +556,150 @@ export function NodeForm({ serverId: initialServer, initial, onClose }: { server
     );
   }
 
-  const finished = locked && !remaining.length;
-  const exportable = created.filter((item) => exportValue(item.client));
+  if (createdResult) {
+    const batchExports = batchClientExports(createdResult.items.map((item) => item.client));
+    const config = configurationState(index.config.get(serverId), !!errors.config, now, createdResult.updatedAt);
+    return (
+      <Dialog title={createdResult.items.length > 1 ? `已创建 ${createdResult.items.length} 个节点` : "节点已创建"} onClose={onClose} wide={createdResult.items.length > 1}>
+        <div className="dialog-body">
+          {batchExports.length > 0 && (
+            <div className="created-batch">
+              {batchExports.map((group) => (
+                <CopyButton key={group.format} className="btn btn-sm" value={group.value} label={group.label}>
+                  {group.label}
+                </CopyButton>
+              ))}
+            </div>
+          )}
+          <div className="created-list">
+            {createdResult.items.map((item) => {
+              const publishedPort = item.port ? displayPort(server, item.port) : null;
+              return (
+                <div className="created-card" key={item.id}>
+                  <div className="created-head">
+                    <ProtocolTag
+                      protocol={item.protocol}
+                      port={publishedPort ?? (item.port || undefined)}
+                      title={item.port && publishedPort != null && publishedPort !== item.port ? `本机端口 ${item.port}` : undefined}
+                    />
+                    <strong>{item.name}</strong>
+                    {item.port > 0 && publishedPort == null && <Status tone="warn">不在 NAT 映射内</Status>}
+                  </div>
+                  <ClientExports name={item.name} client={item.client} />
+                </div>
+              );
+            })}
+          </div>
+          <dl className="facts facts-compact">
+            <div>
+              <dt>{server?.name ?? "服务器"}</dt>
+              <dd><Status tone={config.tone}>{config.label}</Status></dd>
+            </div>
+          </dl>
+        </div>
+        <div className="dialog-footer">
+          <button className="btn btn-primary" onClick={onClose}>完成</button>
+        </div>
+      </Dialog>
+    );
+  }
+
+  const serverNatHint = !initial && server?.nat_ports?.length
+    ? `NAT 本机端口范围：${hostRanges(server.nat_ports)}`
+    : undefined;
+
   return (
     <Dialog title={initial ? "编辑节点" : "添加节点"} onClose={onClose} busy={busy} wide>
       <form onSubmit={submit}>
-        <div className="dialog-body">
-          {!finished && (
-            <fieldset className="form" disabled={busy || uncertain}>
-              {!initial && (
-                <div className="chips" role="group" aria-label="协议，可多选">
-                  {protocols.map((protocol) => (
-                    <button type="button" key={protocol} aria-pressed={selected.includes(protocol)} disabled={locked} onClick={() => toggle(protocol)}>
-                      {protocolLabels[protocol]}{done.has(protocol) ? " · 已创建" : ""}
-                    </button>
-                  ))}
-                </div>
-              )}
-              <div className="form-grid">
-                <Field label="服务器">
-                  <select value={serverId} disabled={locked || !!initial} onChange={(event) => setServerId(event.target.value)} required>
-                    {data.servers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-                  </select>
-                </Field>
-                <Field label="名称" hint={selected.length > 1 ? "会追加协议名" : undefined}>
-                  <input value={name} readOnly={locked} onChange={(event) => setName(event.target.value)} placeholder={server?.name || "节点名称"} />
-                </Field>
-                {selected.length === 1 && (
-                  <Field label="端口" hint={[initial && "修改后原端口停止监听", natPortHint(server, port)].filter(Boolean).join(" · ") || undefined}>
-                    <input type="number" min={1} max={65535} value={port} disabled={locked} onChange={(event) => setPort(event.target.value)} required={!!initial} placeholder="自动分配" />
-                  </Field>
-                )}
-                {remaining.includes("vless-reality") && (
-                  <Field label="Reality 握手域名">
-                    <input value={handshake} onChange={(event) => setHandshake(event.target.value)} required spellCheck={false} />
-                  </Field>
-                )}
-                {remaining.includes("shadowsocks") && (
-                  <Field label="Shadowsocks 加密">
-                    <select value={method} onChange={(event) => setMethod(event.target.value)}>
-                      {shadowsocksMethods.map((item) => <option key={item} value={item}>{item === "none" ? "none（不加密）" : item}</option>)}
-                    </select>
-                  </Field>
-                )}
-                {remaining.includes("snell") && (
-                  <Field label="Snell 版本">
-                    <select value={snellVersion} onChange={(event) => { const version = Number(event.target.value) as 5 | 6; setSnellVersion(version); setSnellMode(version === 5 ? "" : "default"); }}>
-                      <option value={6}>v6</option>
-                      <option value={5}>v5</option>
-                    </select>
-                  </Field>
-                )}
-              </div>
-              {wrappable.length > 0 && (
-                <label className="check">
-                  <input type="checkbox" checked={shadowTLS} onChange={(event) => setShadowTLS(event.target.checked)} />
-                  用 ShadowTLS 包装 {wrappable.map((protocol) => protocolLabels[protocol]).join(" 和 ")}
-                </label>
-              )}
-              {wrapped && (
-                <div className="form-grid">
-                  <Field label="ShadowTLS 握手域名" hint="需支持 TLS 1.3">
-                    <input value={shadowTLSServer} onChange={(event) => setShadowTLSServer(event.target.value)} required spellCheck={false} />
-                  </Field>
-                </div>
-              )}
-              {(remaining.includes("vless-reality") || remaining.includes("snell") || wrapped) && (
-                <details className="advanced">
-                  <summary>高级参数</summary>
-                  <div className="form-grid">
-                    {remaining.includes("vless-reality") && (
-                      <>
-                        <Field label="握手端口">
-                          <input type="number" min={1} max={65535} value={handshakePort} onChange={(event) => setHandshakePort(event.target.value)} required />
-                        </Field>
-                        <Field label="传输">
-                          <select value={transport} onChange={(event) => setTransport(event.target.value)}>
-                            <option value="tcp">TCP</option>
-                            <option value="grpc">gRPC</option>
-                          </select>
-                        </Field>
-                        {transport === "tcp" ? (
-                          <Field label="Flow">
-                            <select value={flow} onChange={(event) => setFlow(event.target.value)}>
-                              <option value="xtls-rprx-vision">xtls-rprx-vision</option>
-                              <option value="">无</option>
-                            </select>
-                          </Field>
-                        ) : (
-                          <Field label="Service Name">
-                            <input value={serviceName} onChange={(event) => setServiceName(event.target.value)} placeholder="可留空" spellCheck={false} />
-                          </Field>
-                        )}
-                      </>
-                    )}
-                    {remaining.includes("snell") && (
-                      <Field label={snellVersion === 5 ? "Snell 混淆" : "Snell 模式"}>
-                        <select value={snellMode} onChange={(event) => setSnellMode(event.target.value)}>
-                          {snellVersion === 5 ? (
-                            <>
-                              <option value="">无</option>
-                              <option value="http">HTTP</option>
-                            </>
-                          ) : (
-                            <>
-                              <option value="default">default</option>
-                              <option value="unshaped">unshaped</option>
-                              <option value="unsafe-raw">unsafe-raw（不加密）</option>
-                            </>
-                          )}
-                        </select>
-                      </Field>
-                    )}
-                    {wrapped && (
-                      <Field label="ShadowTLS 握手端口">
-                        <input type="number" min={1} max={65535} value={shadowTLSPort} onChange={(event) => setShadowTLSPort(event.target.value)} required />
-                      </Field>
+        <fieldset className="dialog-body form" disabled={busy || uncertain}>
+          <Field label="服务器" hint={serverNatHint}>
+            <select
+              value={serverId}
+              disabled={!!initial}
+              onChange={(event) => {
+                setServerId(event.target.value);
+                setError("");
+                setErrorIndex(null);
+              }}
+              required
+            >
+              {data.servers.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </select>
+          </Field>
+
+          {initial ? (
+            <>
+              <NodeDraftFields
+                draft={drafts[0]}
+                drafts={drafts}
+                index={0}
+                server={server}
+                editing
+                onChange={(patch) => updateDraft(0, patch)}
+              />
+              <label className="check">
+                <input type="checkbox" checked={rotate} onChange={(event) => setRotate(event.target.checked)} />
+                重新生成密钥（旧链接失效）
+              </label>
+              <p className="hint">保存后立即下发到服务器，现有连接可能短暂中断。</p>
+            </>
+          ) : (
+            <div className="node-drafts">
+              {drafts.map((draft, position) => (
+                <div
+                  key={draft.key}
+                  ref={(element) => {
+                    if (element) cardRefs.current.set(draft.key, element);
+                    else cardRefs.current.delete(draft.key);
+                  }}
+                  className={`node-draft${errorIndex === position ? " is-error" : ""}`}
+                >
+                  <div className="node-draft-head">
+                    <Segmented
+                      label={`第 ${position + 1} 个节点协议`}
+                      value={draft.protocol}
+                      options={protocolOptions}
+                      onChange={(protocol) => updateDraft(position, { protocol, allowUnsafe: false })}
+                    />
+                    {drafts.length > 1 && (
+                      <button
+                        type="button"
+                        className="icon-btn icon-btn-sm icon-btn-danger"
+                        aria-label={`移除第 ${position + 1} 个节点`}
+                        title="移除"
+                        onClick={() => removeDraft(position)}
+                      >
+                        <X size={15} />
+                      </button>
                     )}
                   </div>
-                </details>
-              )}
-              {unsafe && (
-                <label className="check check-warn">
-                  <input type="checkbox" checked={allowUnsafe} onChange={(event) => setAllowUnsafe(event.target.checked)} required />
-                  <span>这条链路已有其他加密保护，允许使用不加密模式。</span>
-                </label>
-              )}
-              {initial && (
-                <>
-                  <label className="check">
-                    <input type="checkbox" checked={rotate} onChange={(event) => setRotate(event.target.checked)} />
-                    重新生成密钥（旧链接失效）
-                  </label>
-                  <p className="hint">保存后立即下发到服务器，现有连接可能短暂中断。</p>
-                </>
-              )}
-            </fieldset>
-          )}
-          <ErrorText>{error}</ErrorText>
-          {locked && (
-            <div className="created">
-              <h3>已创建 {created.length} 个节点</h3>
-              {created.map((item) => (
-                <div className="created-item" key={item.id}>
-                  <span className="name">{item.name}</span>
-                  {exportValue(item.client) ? <CodeBlock value={exportValue(item.client)} label={`复制 ${item.name}`} /> : <p className="hint">服务器地址识别后可在节点列表复制链接。</p>}
+                  <NodeDraftFields
+                    draft={draft}
+                    drafts={drafts}
+                    index={position}
+                    server={server}
+                    editing={false}
+                    onChange={(patch) => updateDraft(position, patch)}
+                  />
                 </div>
               ))}
-              {exportable.length > 1 && <CodeBlock value={exportable.map((item) => exportValue(item.client)).join("\n")} label="复制全部链接" />}
-              {remaining.length > 0 && <p className="hint">已创建的不会重复创建，修正后可继续创建剩余协议。</p>}
+              {drafts.length < maxBatchNodes && (
+                <button type="button" className="node-draft-add" onClick={addDraft}>
+                  <Plus size={15} aria-hidden="true" />
+                  再加一个节点
+                </button>
+              )}
             </div>
           )}
-        </div>
+
+          <ErrorText>{error}</ErrorText>
+        </fieldset>
         <div className="dialog-footer">
-          <button type="button" className={finished ? "btn btn-primary" : "btn"} disabled={busy} onClick={onClose}>{locked || uncertain ? "完成" : "取消"}</button>
-          {!finished && !uncertain && (
+          <button type="button" className="btn" disabled={busy} onClick={onClose}>{uncertain ? "关闭" : "取消"}</button>
+          {!uncertain && (
             <button type="submit" className="btn btn-primary" disabled={busy || !serverId}>
               {busy && <Spinner size={15} />}
-              {initial ? "保存" : locked ? `创建剩余 ${remaining.length} 个` : selected.length > 1 ? `创建 ${selected.length} 个节点` : "创建节点"}
+              {initial ? "保存" : drafts.length > 1 ? `创建 ${drafts.length} 个节点` : "创建节点"}
             </button>
           )}
         </div>

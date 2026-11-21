@@ -1,7 +1,7 @@
 "use client";
 
 import { Fragment, useState, type FormEvent } from "react";
-import { ArrowRight, ArrowUpDown, Check, Link2, Plus } from "lucide-react";
+import { ArrowRight, ArrowUpDown, Check, Plus } from "lucide-react";
 import { ApiError, type ApiForward, type ForwardInput } from "../lib/api";
 import { displayPort, serverEndpoint } from "../lib/endpoints";
 import { forwardTarget, regionParts, routeState } from "../lib/fleet";
@@ -15,7 +15,7 @@ import { cycleWord, formatBytes, portsCounted, totalBytes, trafficOf } from "../
 import { api, errorText, useFleet } from "./data";
 import { useHistory } from "./history";
 import { navigate } from "./hooks";
-import { useNodeLink } from "./nodes";
+import { NodeLinkButton, useNodeLink } from "./nodes";
 import { SortableGrid } from "./sortable";
 import { Address, Badge, CopyButton, Dialog, Empty, ErrorText, Field, PageHeader, SearchInput, Segmented, Sparkline, Spinner, Status, toast, type Tone } from "./ui";
 
@@ -146,10 +146,7 @@ function RouteCard({ forward, link }: { forward: ApiForward; link: ReturnType<ty
           {endpoint && <CopyButton value={endpoint} label="复制入口地址" />}
         </span>
         {target.node && forward.enabled && endpoint && (
-          <button className="btn btn-sm" onClick={() => void link.copyLink(target.node!, forward)} title="复制客户端链接，地址和端口已替换为此入口">
-            {link.copied === forward.id ? <Check size={14} /> : <Link2 size={14} />}
-            {link.copied === forward.id ? "已复制" : "客户端链接"}
-          </button>
+          <NodeLinkButton link={link} node={target.node} forward={forward} label="客户端链接" title="复制客户端链接，地址和端口已替换为此入口" />
         )}
       </div>
       {(config.tone === "bad" || (config.tone === "warn" && config.label !== "等待状态确认")) && (

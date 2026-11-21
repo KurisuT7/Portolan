@@ -1,6 +1,7 @@
 package api
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
@@ -10,6 +11,8 @@ import (
 	"github.com/KurisuT7/Portolan/internal/model"
 	"github.com/KurisuT7/Portolan/internal/store"
 )
+
+const maxBatchCreateNodes = 32
 
 func (s *Server) listNodes(w http.ResponseWriter, r *http.Request) {
 	nodes, err := s.store.ListNodes(r.Context())
@@ -48,6 +51,71 @@ func (s *Server) createNode(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusCreated, result)
+}
+
+func (s *Server) createNodes(w http.ResponseWriter, r *http.Request) {
+	var request createNodesRequest
+	if err := decodeJSON(w, r, &request); err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if len(request.Nodes) == 0 {
+		writeError(w, http.StatusBadRequest, "至少添加一个节点")
+		return
+	}
+	if len(request.Nodes) > maxBatchCreateNodes {
+		writeError(w, http.StatusBadRequest, fmt.Sprintf("一次最多创建 %d 个节点", maxBatchCreateNodes))
+		return
+	}
+	server, err := s.store.GetServer(r.Context(), request.ServerID)
+	if err != nil {
+		s.writeStoreError(w, err)
+		return
+	}
+	batch := make([]store.NodeCreate, 0, len(request.Nodes))
+	for index, item := range request.Nodes {
+		node := model.Node{ServerID: request.ServerID, Name: item.Name, Protocol: item.Protocol, ListenPort: item.ListenPort, Enabled: true}
+		profile, err := buildNode(server, &node, item.nodeSettings, nil)
+		if err != nil {
+			s.writeStoreError(w, prefixNodeError(index, len(request.Nodes), err))
+			return
+		}
+		batch = append(batch, store.NodeCreate{Node: node, Profile: profile})
+	}
+	created, createdAt, err := s.store.CreateNodes(r.Context(), request.ServerID, batch)
+	if err != nil {
+		s.writeStoreError(w, err)
+		return
+	}
+	items := make([]map[string]any, 0, len(created))
+	for _, node := range created {
+		item, err := savedNode(server, node)
+		if err != nil {
+			s.internalError(w, err)
+			return
+		}
+		item["name"] = node.Name
+		item["protocol"] = node.Protocol
+		items = append(items, item)
+	}
+	writeJSON(w, http.StatusCreated, map[string]any{
+		"items":      items,
+		"updated_at": createdAt,
+	})
+}
+
+func prefixNodeError(index, total int, err error) error {
+	if total <= 1 || err == nil {
+		return err
+	}
+	switch {
+	case errors.Is(err, store.ErrInvalidInput):
+		return fmt.Errorf("%w: 第 %d 个节点：%s", store.ErrInvalidInput, index+1, strings.TrimPrefix(err.Error(), store.ErrInvalidInput.Error()+": "))
+	case errors.Is(err, store.ErrConflict):
+		return fmt.Errorf("%w: 第 %d 个节点：%s", store.ErrConflict, index+1, strings.TrimPrefix(err.Error(), store.ErrConflict.Error()+": "))
+	default:
+		return err
+	}
 }
 
 // getNode returns the settings of a node without its credentials.
@@ -217,7 +285,12 @@ func buildNode(server model.Server, node *model.Node, settings nodeSettings, pre
 // waits while the server address is still being detected.
 func savedNode(server model.Server, node model.Node) (map[string]any, error) {
 	if strings.TrimSpace(server.Address) == "" {
-		return map[string]any{"id": node.ID, "client": configgen.ClientExport{}, "export_pending": true}, nil
+		return map[string]any{
+			"id":             node.ID,
+			"listen_port":    node.ListenPort,
+			"client":         configgen.ClientExport{},
+			"export_pending": true,
+		}, nil
 	}
 	// Ports of a NAT server are allocated and checked within its mappings.
 	port, _ := server.PublicPort(server.Address, node.ListenPort)
@@ -225,7 +298,11 @@ func savedNode(server model.Server, node model.Node) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
-	return map[string]any{"id": node.ID, "client": client}, nil
+	return map[string]any{
+		"id":          node.ID,
+		"listen_port": node.ListenPort,
+		"client":      client,
+	}, nil
 }
 
 func (s *Server) deleteNode(w http.ResponseWriter, r *http.Request) {
@@ -315,6 +392,16 @@ type shadowTLSSettings struct {
 
 type createNodeRequest struct {
 	ServerID string         `json:"server_id"`
+	Protocol model.Protocol `json:"protocol"`
+	nodeSettings
+}
+
+type createNodesRequest struct {
+	ServerID string           `json:"server_id"`
+	Nodes    []createNodeItem `json:"nodes"`
+}
+
+type createNodeItem struct {
 	Protocol model.Protocol `json:"protocol"`
 	nodeSettings
 }

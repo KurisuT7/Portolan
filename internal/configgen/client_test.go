@@ -56,6 +56,37 @@ func TestShadowsocksExportEncodingFollowsSIP002(t *testing.T) {
 	}
 }
 
+func TestShadowsocksExportSurgeLine(t *testing.T) {
+	endpoint := PublishedEndpoint{Address: "203.0.113.9", Port: 8388, Name: "edge"}
+	tests := []struct {
+		name string
+		spec model.SSSpec
+		want string
+	}{
+		{"AEAD-2022 key is quoted", model.SSSpec{Method: "2022-blake3-aes-128-gcm", Password: "8JCsPssfgS8tiRwiMlhARg=="},
+			`edge = ss, 203.0.113.9, 8388, encrypt-method=2022-blake3-aes-128-gcm, password="8JCsPssfgS8tiRwiMlhARg==", udp-relay=true`},
+		{"AEAD", model.SSSpec{Method: "xchacha20-ietf-poly1305", Password: "secret"},
+			`edge = ss, 203.0.113.9, 8388, encrypt-method=xchacha20-ietf-poly1305, password="secret", udp-relay=true`},
+		{"method Surge lacks", model.SSSpec{Method: "2022-blake3-chacha20-poly1305", Password: "6dTK/AU6smBCNgj3ixv9B7kiCIDI2v+KGeqI2LPo++w="}, ""},
+		{"password that cannot be quoted", model.SSSpec{Method: "aes-256-gcm", Password: `se"cret`}, ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			node := model.Node{ID: "ss", Name: "ss", Protocol: model.ProtocolShadowsocks, ListenPort: 8388, SS: &test.spec}
+			export, err := ExportClient(node, endpoint)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if export.SurgeLine != test.want {
+				t.Fatalf("Surge line = %q, want %q", export.SurgeLine, test.want)
+			}
+			if export.URI == "" {
+				t.Fatal("the share link must remain available")
+			}
+		})
+	}
+}
+
 func TestSnellExportUsesSurgeParameters(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -94,6 +125,9 @@ func TestShadowTLSExports(t *testing.T) {
 	want := "ss://YWVzLTI1Ni1nY206c2VjcmV0@203.0.113.9:443/?plugin=shadow-tls%3Bhost%3Daws.amazon.com%3Bpassword%3Dstls-Password_1%3Bversion%3D3#edge"
 	if export.URI != want {
 		t.Fatalf("ShadowTLS link = %s, want %s", export.URI, want)
+	}
+	if export.SurgeLine != `edge = ss, 203.0.113.9, 443, encrypt-method=aes-256-gcm, password="secret", udp-relay=true, shadow-tls-password=stls-Password_1, shadow-tls-sni=aws.amazon.com, shadow-tls-version=3` {
+		t.Fatalf("Shadowsocks Surge line = %q", export.SurgeLine)
 	}
 
 	snell := model.Node{ID: "snell", Name: "Snell", Protocol: model.ProtocolSnell, ListenPort: 443, ShadowTLS: stls,

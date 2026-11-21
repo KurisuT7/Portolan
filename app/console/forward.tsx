@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Activity, Check, Link2, Pencil, RefreshCw, Trash2 } from "lucide-react";
+import { Activity, Pencil, RefreshCw, Trash2 } from "lucide-react";
 import type { ApiForward, ApiForwardProbeHistory, ProbeHistoryRange } from "../lib/api";
 import { serverEndpoint } from "../lib/endpoints";
 import { forwardTarget, regionParts, routeState } from "../lib/fleet";
@@ -13,7 +13,7 @@ import { LatencyChart } from "./chart";
 import { api, errorText, useFleet } from "./data";
 import { engineLabels, ForwardForm, networksLabel, probeBadge } from "./forwards";
 import { navigate } from "./hooks";
-import { useNodeLink } from "./nodes";
+import { NodeLinkButton, useNodeLink } from "./nodes";
 import { TrafficPanel } from "./traffic";
 import { Address, Badge, ConfirmDelete, CopyButton, Empty, PageHeader, Segmented, Spinner, Status, toast, type Tone } from "./ui";
 
@@ -95,10 +95,7 @@ export function ForwardPage({ id }: { id: string }) {
             <Status tone={config.tone}>配置{config.label}</Status>
             {route.stopped && <Status tone="bad">转发进程未运行 · {route.engineDetail}</Status>}
             {target.node && forward.enabled && endpoint && (
-              <button className="btn btn-sm" onClick={() => void link.copyLink(target.node!, forward)} title="地址和端口已替换为此入口">
-                {link.copied === forward.id ? <Check size={14} /> : <Link2 size={14} />}
-                {link.copied === forward.id ? "已复制" : "复制客户端链接"}
-              </button>
+              <NodeLinkButton link={link} node={target.node} forward={forward} label="复制客户端链接" title="地址和端口已替换为此入口" />
             )}
           </div>
         </div>

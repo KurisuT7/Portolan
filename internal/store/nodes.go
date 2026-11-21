@@ -21,6 +21,11 @@ const (
 	legacyExternalNodeProfile = "\u6fb6\u682d\u5134\u947a\u509c\u5063"
 )
 
+type NodeCreate struct {
+	Node    model.Node
+	Profile string
+}
+
 func (s *Store) CreateNode(ctx context.Context, node model.Node, profile string) (model.Node, error) {
 	server, err := s.GetServer(ctx, node.ServerID)
 	if err != nil {
@@ -74,6 +79,98 @@ func (s *Store) CreateNode(ctx context.Context, node model.Node, profile string)
 		return model.Node{}, err
 	}
 	return node, s.commitSync(ctx, tx, node.ServerID)
+}
+
+// CreateNodes inserts every node on serverID and queues one sync snapshot in a
+// single transaction, so automatic port allocation avoids earlier items and a
+// failure leaves no partial nodes behind.
+func (s *Store) CreateNodes(ctx context.Context, serverID string, items []NodeCreate) ([]model.Node, time.Time, error) {
+	if len(items) == 0 {
+		return nil, time.Time{}, fmt.Errorf("%w: 至少添加一个节点", ErrInvalidInput)
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	defer tx.Rollback()
+	server, err := s.getServerFrom(ctx, tx, serverID)
+	if err != nil {
+		return nil, time.Time{}, err
+	}
+	createdAt := time.Now().UTC()
+	created := make([]model.Node, 0, len(items))
+	for index, item := range items {
+		node := item.Node
+		node.ServerID = serverID
+		node.Managed = true
+		node.Source = ""
+		node.Enabled = true
+		if node.ListenPort == 0 {
+			port, err := availablePortFrom(ctx, tx, server, "")
+			if err != nil {
+				return nil, time.Time{}, prefixBatchNodeError(index, len(items), err)
+			}
+			node.ListenPort = port
+		} else {
+			if !server.MapsHostPort(node.ListenPort) {
+				return nil, time.Time{}, prefixBatchNodeError(index, len(items),
+					fmt.Errorf("%w: 端口 %d 不在 %s 的端口映射内（%s）", ErrInvalidInput, node.ListenPort, server.Name, server.HostPortRanges()))
+			}
+			var used int
+			if err := tx.QueryRowContext(ctx, `SELECT
+				(SELECT COUNT(*) FROM nodes WHERE server_id=? AND listen_port=?) +
+				(SELECT COUNT(*) FROM forwards WHERE ingress_server_id=? AND listen_port=?)`,
+				serverID, node.ListenPort, serverID, node.ListenPort).Scan(&used); err != nil {
+				return nil, time.Time{}, err
+			}
+			if used > 0 {
+				return nil, time.Time{}, prefixBatchNodeError(index, len(items),
+					fmt.Errorf("%w: 监听端口 %d 已被节点或转发占用", ErrConflict, node.ListenPort))
+			}
+		}
+		if err := node.Validate(); err != nil {
+			return nil, time.Time{}, prefixBatchNodeError(index, len(items), fmt.Errorf("%w: %v", ErrInvalidInput, err))
+		}
+		if node.ID == "" {
+			node.ID, err = randomID("node")
+			if err != nil {
+				return nil, time.Time{}, err
+			}
+		}
+		node.CreatedAt = createdAt
+		data, err := json.Marshal(node)
+		if err != nil {
+			return nil, time.Time{}, err
+		}
+		sealed, err := s.vault.Seal(data, "node:"+node.ID)
+		if err != nil {
+			return nil, time.Time{}, err
+		}
+		if _, err := tx.ExecContext(ctx, `INSERT INTO nodes(id,server_id,name,protocol,listen_port,enabled,managed,source,last_seen_at,profile,sealed_spec,created_at)
+			VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`, node.ID, node.ServerID, node.Name, string(node.Protocol), node.ListenPort, node.Enabled,
+			true, "", nil, item.Profile, sealed, node.CreatedAt.Format(time.RFC3339Nano)); err != nil {
+			return nil, time.Time{}, err
+		}
+		created = append(created, node)
+	}
+	if err := s.commitSync(ctx, tx, serverID); err != nil {
+		return nil, time.Time{}, err
+	}
+	return created, createdAt, nil
+}
+
+func prefixBatchNodeError(index, total int, err error) error {
+	if total <= 1 || err == nil {
+		return err
+	}
+	switch {
+	case errors.Is(err, ErrInvalidInput):
+		return fmt.Errorf("%w: 第 %d 个节点：%s", ErrInvalidInput, index+1, strings.TrimPrefix(err.Error(), ErrInvalidInput.Error()+": "))
+	case errors.Is(err, ErrConflict):
+		return fmt.Errorf("%w: 第 %d 个节点：%s", ErrConflict, index+1, strings.TrimPrefix(err.Error(), ErrConflict.Error()+": "))
+	default:
+		return err
+	}
 }
 
 // UpdateNode replaces the name, port and protocol settings of a managed node

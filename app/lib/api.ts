@@ -68,10 +68,18 @@ export type ApiNodeSettings = {
 
 export type SavedNode = {
   id: string;
+  listen_port?: number;
+  name?: string;
+  protocol?: ApiNode["protocol"];
   client: ClientExport;
   export_pending?: boolean;
   // Set when an update changed the node; absent after a save without changes.
   updated_at?: string;
+};
+
+export type CreatedNodesResponse = {
+  items: SavedNode[];
+  updated_at: string;
 };
 
 export type ApiForward = {
@@ -413,6 +421,13 @@ export class PortolanApi {
 
   async createNode(payload: Record<string, unknown>) {
     return this.request<SavedNode>("/api/v1/nodes", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  async createNodes(payload: { server_id: string; nodes: Record<string, unknown>[] }) {
+    return this.request<CreatedNodesResponse>("/api/v1/nodes/batch", {
       method: "POST",
       body: JSON.stringify(payload),
     });

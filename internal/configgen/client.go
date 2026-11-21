@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -65,8 +66,9 @@ func ExportClient(node model.Node, endpoint PublishedEndpoint) (ClientExport, er
 			details["shadow_tls"] = true
 		}
 		return ClientExport{
-			URI:     "ss://" + userinfo + "@" + hostPort + query + "#" + url.PathEscape(endpoint.Name),
-			Details: details,
+			URI:       "ss://" + userinfo + "@" + hostPort + query + "#" + url.PathEscape(endpoint.Name),
+			SurgeLine: surgeShadowsocksLine(node, endpoint),
+			Details:   details,
 		}, nil
 	case model.ProtocolSnell:
 		line := fmt.Sprintf("%s = snell, %s, %d, psk=%s, version=%d", endpoint.Name, endpoint.Address, endpoint.Port, node.Snell.PSK, node.Snell.Version)
@@ -80,12 +82,37 @@ func ExportClient(node model.Node, endpoint PublishedEndpoint) (ClientExport, er
 			details["mode"] = node.Snell.Mode
 		}
 		if stls := node.ShadowTLS; stls != nil {
-			line += fmt.Sprintf(", shadow-tls-password=%s, shadow-tls-sni=%s, shadow-tls-version=3", stls.Password, stls.HandshakeServer)
+			line += surgeShadowTLS(*stls)
 			details["shadow_tls"] = true
 		}
 		return ClientExport{SurgeLine: line, Details: details}, nil
 	}
 	return ClientExport{}, fmt.Errorf("unsupported protocol %q", node.Protocol)
+}
+
+// surgeShadowsocksMethods are the Shadowsocks methods Surge implements.
+var surgeShadowsocksMethods = []string{
+	"2022-blake3-aes-128-gcm", "2022-blake3-aes-256-gcm",
+	"aes-128-gcm", "aes-192-gcm", "aes-256-gcm", "chacha20-ietf-poly1305", "xchacha20-ietf-poly1305", "none",
+}
+
+// surgeShadowsocksLine is empty when Surge cannot express the node. The
+// password is quoted because Base64 keys contain '=', '+' and '/'.
+func surgeShadowsocksLine(node model.Node, endpoint PublishedEndpoint) string {
+	if !slices.Contains(surgeShadowsocksMethods, node.SS.Method) || strings.Contains(node.SS.Password, `"`) {
+		return ""
+	}
+	// The protocol inbound serves UDP on the node port, also behind ShadowTLS.
+	line := fmt.Sprintf(`%s = ss, %s, %d, encrypt-method=%s, password="%s", udp-relay=true`,
+		endpoint.Name, endpoint.Address, endpoint.Port, node.SS.Method, node.SS.Password)
+	if stls := node.ShadowTLS; stls != nil {
+		line += surgeShadowTLS(*stls)
+	}
+	return line
+}
+
+func surgeShadowTLS(stls model.ShadowTLSSpec) string {
+	return fmt.Sprintf(", shadow-tls-password=%s, shadow-tls-sni=%s, shadow-tls-version=3", stls.Password, stls.HandshakeServer)
 }
 
 // percentEncode escapes every byte outside the RFC 3986 unreserved set.

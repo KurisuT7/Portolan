@@ -1,6 +1,7 @@
 "use client";
 
 import { Fragment, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ArrowLeft, Check, Copy, LoaderCircle, Search, X } from "lucide-react";
 import type { ApiForwardProbeHistoryPoint, ApiNode } from "../lib/api";
 import { protocolShort } from "../lib/nodes";
@@ -142,6 +143,9 @@ export function Dialog({ title, onClose, busy = false, wide = false, children }:
       opener?.focus();
     };
   }, []);
+  useEffect(() => {
+    ref.current?.scrollTo(0, 0);
+  }, [title]);
   return (
     <dialog
       ref={ref}
@@ -207,7 +211,10 @@ export function ConfirmDelete({ title, name, description, disabled = false, onCo
 // Passing a promise keeps Safari's user-activation requirement satisfied while the value is still loading.
 export async function copyText(value: string | Promise<string>) {
   if (typeof value !== "string" && typeof ClipboardItem !== "undefined" && navigator.clipboard?.write) {
-    await navigator.clipboard.write([new ClipboardItem({ "text/plain": value.then((text) => new Blob([text], { type: "text/plain" })) })]);
+    const blob = value.then((text) => new Blob([text], { type: "text/plain" }));
+    // The write rejects with the same error, which the caller handles.
+    blob.catch(() => {});
+    await navigator.clipboard.write([new ClipboardItem({ "text/plain": blob })]);
     return;
   }
   await navigator.clipboard.writeText(await value);
@@ -253,6 +260,87 @@ export function CodeBlock({ value, label }: { value: string; label: string }) {
       <pre tabIndex={0}>{value}</pre>
       <CopyButton value={value} label={label}>复制</CopyButton>
     </div>
+  );
+}
+
+type MenuItem = { label: string; onSelect: () => void };
+const menuItemHeight = 34;
+const menuPadding = 12;
+
+// The menu renders in the page root, so lists and cards that clip their content do not cut it off.
+export function MenuButton({ label, items, children, title, disabled }: { label: string; items: MenuItem[]; children: ReactNode; title?: string; disabled?: boolean }) {
+  const [place, setPlace] = useState<{ top: number; right: number } | null>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!place) return;
+    menu.current?.querySelector("button")?.focus({ preventScroll: true });
+    const close = (event: Event) => {
+      if (event instanceof KeyboardEvent) {
+        if (event.key !== "Escape" && event.key !== "Tab") return;
+        // Tab then moves on from the trigger, in page order.
+        trigger.current?.focus();
+      } else if (event.type === "pointerdown" && [menu.current, trigger.current].some((element) => element?.contains(event.target as Node))) {
+        return;
+      }
+      setPlace(null);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    window.addEventListener("resize", close);
+    window.addEventListener("scroll", close, true);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+      window.removeEventListener("resize", close);
+      window.removeEventListener("scroll", close, true);
+    };
+  }, [place]);
+  function toggle() {
+    if (place || !trigger.current) return setPlace(null);
+    const rect = trigger.current.getBoundingClientRect();
+    const height = items.length * menuItemHeight + menuPadding;
+    // Near the bottom of the viewport the menu opens upwards.
+    const top = rect.bottom + 6 + height > window.innerHeight ? rect.top - 6 - height : rect.bottom + 6;
+    setPlace({ top, right: document.documentElement.clientWidth - rect.right });
+  }
+  return (
+    <>
+      <button ref={trigger} type="button" className="btn btn-sm" title={title} disabled={disabled} aria-haspopup="menu" aria-expanded={!!place} onClick={toggle}>
+        {children}
+      </button>
+      {place && createPortal(
+        <div
+          ref={menu}
+          className="menu menu-floating"
+          role="menu"
+          aria-label={label}
+          style={{ top: place.top, right: place.right }}
+          onKeyDown={(event) => {
+            if (event.key !== "ArrowDown" && event.key !== "ArrowUp") return;
+            event.preventDefault();
+            const buttons = [...event.currentTarget.querySelectorAll("button")];
+            const next = buttons.indexOf(document.activeElement as HTMLButtonElement) + (event.key === "ArrowDown" ? 1 : -1);
+            buttons[(next + buttons.length) % buttons.length]?.focus();
+          }}
+        >
+          {items.map((item) => (
+            <button
+              key={item.label}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setPlace(null);
+                item.onSelect();
+              }}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </>
   );
 }
 

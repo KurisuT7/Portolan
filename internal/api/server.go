@@ -130,6 +130,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("DELETE /api/v1/servers/{id}", s.withAdmin(s.deleteServer))
 	mux.HandleFunc("GET /api/v1/nodes", s.withAdmin(s.listNodes))
 	mux.HandleFunc("POST /api/v1/nodes", s.withAdmin(s.createNode))
+	mux.HandleFunc("POST /api/v1/nodes/batch", s.withAdmin(s.createNodes))
 	mux.HandleFunc("GET /api/v1/nodes/{id}", s.withAdmin(s.getNode))
 	mux.HandleFunc("PUT /api/v1/nodes/{id}", s.withAdmin(s.updateNode))
 	mux.HandleFunc("DELETE /api/v1/nodes/{id}", s.withAdmin(s.deleteNode))
